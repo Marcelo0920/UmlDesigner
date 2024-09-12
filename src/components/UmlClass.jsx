@@ -1,4 +1,3 @@
-// UmlClass.js
 import { dia } from "jointjs";
 
 const UmlClass = dia.Element.define(
@@ -51,7 +50,7 @@ const UmlClass = dia.Element.define(
       },
     },
 
-    name: [],
+    name: "ClassName",
     attributes: [],
     methods: [],
   },
