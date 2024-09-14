@@ -1,9 +1,14 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { dia, shapes, linkTools, elementTools } from "jointjs";
+import UmlDesignerButtons from "./UmlDesignerButtons";
+import EditElementPanel from "./EditElementPanel";
+import EditLinkPanel from "./EditLinkPanel";
 import UmlClass from "./UmlClass";
 import axios from "axios";
 import "jointjs/dist/joint.css";
 import "../styles/umlPaper.css";
+import { generateXml } from "../utils/generateXml";
+import { createDashedLink, createLink } from "../utils/linkCreators";
 
 const UmlDesigner = () => {
   const graphRef = useRef(null);
@@ -18,6 +23,7 @@ const UmlDesigner = () => {
   const [isLinkMode, setIsLinkMode] = useState(false);
   const [sourceElement, setSourceElement] = useState(null);
   const [editingLink, setEditingLink] = useState(null);
+  const [isIntermediateClassMode, setIsIntermediateClassMode] = useState(false);
   const [linkValues, setLinkValues] = useState({
     associationType: "association",
     sourceMultiplicity: "1",
@@ -59,18 +65,88 @@ const UmlDesigner = () => {
     }
   }, [isLinkMode, sourceElement]);
 
-  const handleElementClick = (elementView) => {
-    const element = elementView.model;
-    setSelectedElement(element);
+  const handleElementClick = useCallback(
+    (elementView) => {
+      const element = elementView.model;
 
-    if (isLinkMode) {
-      if (!sourceElement) {
-        setSourceElement(element);
+      if (isLinkMode || isIntermediateClassMode) {
+        if (!sourceElement) {
+          setSourceElement(element);
+        } else {
+          if (isLinkMode) {
+            createLink(sourceElement.id, element.id, graphRef);
+          } else if (isIntermediateClassMode) {
+            createIntermediateClass(sourceElement, element);
+          }
+          setSourceElement(null);
+          setIsLinkMode(false);
+          setIsIntermediateClassMode(false);
+        }
       } else {
-        createLink(sourceElement, element);
-        setSourceElement(null);
-        setIsLinkMode(false);
+        setSelectedElement(element);
       }
+    },
+    [isLinkMode, isIntermediateClassMode, sourceElement]
+  );
+
+  useEffect(() => {
+    if (paperRef.current) {
+      paperRef.current
+        .off("element:pointerclick")
+        .on("element:pointerclick", handleElementClick);
+    }
+  }, [handleElementClick]);
+
+  const createIntermediateClass = (source, target) => {
+    if (graphRef.current && paperRef.current) {
+      const sourcePosition = source.position();
+      const targetPosition = target.position();
+      const midX = (sourcePosition.x + targetPosition.x) / 2;
+      const midY = (sourcePosition.y + targetPosition.y) / 2;
+
+      // Create the intermediate class
+      const intermediateClass = new UmlClass({
+        position: { x: midX, y: midY + 100 }, // Position it slightly below the midpoint
+        size: { width: 200, height: 100 },
+        name: "IntermediateClass",
+        attributes: [],
+        methods: [],
+      });
+
+      graphRef.current.addCell(intermediateClass);
+
+      // Create the direct link between source and target
+      const directLink = createLink(source.id, target.id, graphRef);
+
+      // Create the dashed link to the intermediate class
+      createDashedLink(directLink, intermediateClass.id, graphRef);
+
+      // Add remove tool to the intermediate class
+      const elementView = intermediateClass.findView(paperRef.current);
+      elementView.addTools(
+        new dia.ToolsView({
+          tools: [new elementTools.Remove({ offset: { x: 10, y: 10 } })],
+        })
+      );
+    }
+  };
+
+  const toggleIntermediateClassMode = useCallback(() => {
+    setIsIntermediateClassMode((prev) => !prev);
+    setIsLinkMode(false);
+    setSourceElement(null);
+  }, []);
+
+  const exportToXml = () => {
+    const xmlContent = generateXml(graphRef);
+    if (xmlContent) {
+      const blob = new Blob([xmlContent], { type: "text/xml" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "uml_diagram.xml";
+      link.click();
+      URL.revokeObjectURL(url);
     }
   };
 
@@ -104,7 +180,6 @@ const UmlDesigner = () => {
 
   const handleLinkDoubleClick = (linkView) => {
     const link = linkView.model;
-    console.log("Link double-clicked");
     setEditingLink(link);
     setEditingElement(null);
     setLinkValues({
@@ -201,107 +276,60 @@ const UmlDesigner = () => {
     if (graphRef.current) {
       const jsonGraph = graphRef.current.toJSON();
 
-      console.log(jsonGraph);
+      const filteredData = jsonGraph.cells.reduce(
+        (acc, cell) => {
+          if (cell.type === "uml.Class") {
+            acc.classes.push({
+              name: cell.name,
+              attributes: cell.attributes,
+              methods: cell.methods,
+            });
+          } else if (cell.type === "standard.Link") {
+            acc.links.push({
+              source: cell.source.id,
+              target: cell.target.id,
+            });
+          }
+          return acc;
+        },
+        { classes: [], links: [] }
+      );
+
+      console.log("Filtered UML data:", filteredData);
 
       try {
         const response = await axios.post(
-          "http://your-backend-url/api/export-uml",
-          jsonGraph
+          "http://your-backend-url/api/generate-java-code",
+          filteredData
         );
-        console.log("UML design exported successfully:", response.data);
-        alert("UML design exported successfully!");
+        console.log("Java code generated successfully:", response.data);
+        alert("Java code generated successfully!");
       } catch (error) {
-        console.error("Error exporting UML design:", error);
-        alert("Error exporting UML design. Please try again.");
+        console.error("Error generating Java code:", error);
+        alert("Error generating Java code. Please try again.");
       }
     }
   };
 
-  const toggleLinkMode = () => {
-    setIsLinkMode(!isLinkMode);
+  const toggleLinkMode = useCallback(() => {
+    setIsLinkMode((prev) => !prev);
+    setIsIntermediateClassMode(false);
     setSourceElement(null);
-  };
-
-  const createLink = (source, target) => {
-    if (graphRef.current && paperRef.current) {
-      const link = new shapes.standard.Link({
-        source: { id: source.id },
-        target: { id: target.id },
-        router: { name: "manhattan" },
-        connector: { name: "rounded" },
-        attrs: {
-          line: {
-            stroke: "#333333",
-            strokeWidth: 2,
-          },
-          ".marker-target": {
-            fill: "#333333",
-            d: "M 10 0 L 0 5 L 10 10 z",
-          },
-        },
-        labels: [
-          {
-            position: 0.1,
-            attrs: { text: { text: "1", fill: "#333333" } },
-          },
-          {
-            position: 0.9,
-            attrs: { text: { text: "1", fill: "#333333" } },
-          },
-        ],
-      });
-
-      graphRef.current.addCell(link);
-
-      const linkView = link.findView(paperRef.current);
-      linkView.addTools(
-        new dia.ToolsView({
-          tools: [
-            new linkTools.Vertices(),
-            new linkTools.Segments() /* 
-            new linkTools.SourceArrowhead(), */,
-            new linkTools.TargetArrowhead(),
-            new linkTools.Button({
-              distance: "25%",
-              action: function () {
-                link.remove();
-              },
-            }),
-          ],
-        })
-      );
-    }
-  };
+  }, []);
 
   return (
     <div>
-      <div style={{ marginBottom: "20px" }}>
-        <button onClick={addNewUmlClass} style={{ marginRight: "10px" }}>
-          Add UML Class
-        </button>
-        <button
-          onClick={toggleLinkMode}
-          style={{
-            backgroundColor: isLinkMode ? "lightblue" : "white",
-            marginRight: "10px",
-          }}
-        >
-          {isLinkMode ? "Cancel Link" : "Create Link"}
-        </button>
-        <button
-          onClick={exportUmlDesign}
-          style={{ backgroundColor: "#4CAF50", color: "white" }}
-        >
-          Export UML Design
-        </button>
-        <button
-          onClick={deleteSelectedElement}
-          style={{ backgroundColor: "#f44336", color: "white" }}
-          disabled={!selectedElement}
-        >
-          Delete Selected
-        </button>
-      </div>
+      <UmlDesignerButtons
+        addNewUmlClass={addNewUmlClass}
+        toggleLinkMode={toggleLinkMode}
+        isLinkMode={isLinkMode}
+        exportUmlDesign={exportUmlDesign}
+        exportToXml={exportToXml}
+        toggleIntermediateClassMode={toggleIntermediateClassMode}
+        isIntermediateClassMode={isIntermediateClassMode}
+        deleteSelectedElement={deleteSelectedElement}
+        selectedElement={selectedElement}
+      />
       <div style={{ display: "flex" }}>
         <div
           ref={graphRef}
@@ -309,88 +337,18 @@ const UmlDesigner = () => {
           style={{ flex: 1, height: "600px" }}
         ></div>
         {editingElement && (
-          <div
-            style={{
-              padding: "20px",
-              backgroundColor: "#b0b0b0",
-              border: "1px solid #ccc",
-              borderRadius: "5px",
-              marginLeft: "20px",
-              width: "300px",
-            }}
-          >
-            <h3>Edit UML Class</h3>
-            <div>
-              <label>Class Name:</label>
-              <input
-                type="text"
-                value={editValues.name}
-                onChange={handleEditChange("name")}
-                style={{ width: "100%", marginBottom: "10px" }}
-              />
-            </div>
-            <div>
-              <label>Attributes (one per line):</label>
-              <textarea
-                value={editValues.attributes.join("\n")}
-                onChange={handleEditChange("attributes")}
-                rows={5}
-                style={{ width: "100%", marginBottom: "10px" }}
-              />
-            </div>
-            <div>
-              <label>Methods (one per line):</label>
-              <textarea
-                value={editValues.methods.join("\n")}
-                onChange={handleEditChange("methods")}
-                rows={5}
-                style={{ width: "100%", marginBottom: "10px" }}
-              />
-            </div>
-            <button onClick={handleEditSubmit}>Save Changes</button>
-          </div>
+          <EditElementPanel
+            editValues={editValues}
+            handleEditChange={handleEditChange}
+            handleEditSubmit={handleEditSubmit}
+          />
         )}
         {editingLink && (
-          <div
-            style={{
-              padding: "20px",
-              backgroundColor: "#b0b0b0",
-              border: "1px solid #ccc",
-              borderRadius: "5px",
-              marginLeft: "20px",
-              width: "300px",
-            }}
-          >
-            <h3>Edit Association</h3>
-            <div>
-              <label>Association Type:</label>
-              <input
-                type="text"
-                value={linkValues.associationType}
-                onChange={handleLinkEditChange("associationType")}
-                style={{ width: "100%", marginBottom: "10px" }}
-              />
-            </div>
-            <div>
-              <label>Source Multiplicity:</label>
-              <input
-                type="text"
-                value={linkValues.sourceMultiplicity}
-                onChange={handleLinkEditChange("sourceMultiplicity")}
-                style={{ width: "100%", marginBottom: "10px" }}
-              />
-            </div>
-            <div>
-              <label>Target Multiplicity:</label>
-              <input
-                type="text"
-                value={linkValues.targetMultiplicity}
-                onChange={handleLinkEditChange("targetMultiplicity")}
-                style={{ width: "100%", marginBottom: "10px" }}
-              />
-            </div>
-            <button onClick={handleLinkEditSubmit}>Save Changes</button>
-          </div>
+          <EditLinkPanel
+            linkValues={linkValues}
+            handleLinkEditChange={handleLinkEditChange}
+            handleLinkEditSubmit={handleLinkEditSubmit}
+          />
         )}
       </div>
     </div>
