@@ -16,9 +16,9 @@ const EditElementPanel = ({
         width: "300px",
       }}
     >
-      <h3>Edit UML Class</h3>
+      <h3>Editar Clase UML</h3>
       <div>
-        <label>Class Name:</label>
+        <label>Nombre de la Clase:</label>
         <input
           type="text"
           value={editValues.name}
@@ -27,7 +27,7 @@ const EditElementPanel = ({
         />
       </div>
       <div>
-        <label>Attributes (one per line):</label>
+        <label>Atributos (uno por linea):</label>
         <textarea
           value={editValues.attributes.join("\n")}
           onChange={handleEditChange("attributes")}
@@ -36,7 +36,7 @@ const EditElementPanel = ({
         />
       </div>
       <div>
-        <label>Methods (one per line):</label>
+        <label>Metodos (uno por linea):</label>
         <textarea
           value={editValues.methods.join("\n")}
           onChange={handleEditChange("methods")}

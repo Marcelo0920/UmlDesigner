@@ -1,4 +1,3 @@
-import { useState } from "react";
 import UmlDesigner from "./components/UmlDesigner.jsx";
 
 function App() {

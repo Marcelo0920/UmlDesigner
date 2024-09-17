@@ -16,9 +16,9 @@ const EditLinkPanel = ({
         width: "300px",
       }}
     >
-      <h3>Edit Association</h3>
+      <h3>Editar Asociacion</h3>
       <div>
-        <label>Association Type:</label>
+        <label>Tipo de Asociacion:</label>
         <input
           type="text"
           value={linkValues.associationType}
@@ -27,7 +27,7 @@ const EditLinkPanel = ({
         />
       </div>
       <div>
-        <label>Source Multiplicity:</label>
+        <label>Cardinalidad de la fuente:</label>
         <input
           type="text"
           value={linkValues.sourceMultiplicity}
@@ -36,7 +36,7 @@ const EditLinkPanel = ({
         />
       </div>
       <div>
-        <label>Target Multiplicity:</label>
+        <label>Cardinalidad del destino:</label>
         <input
           type="text"
           value={linkValues.targetMultiplicity}

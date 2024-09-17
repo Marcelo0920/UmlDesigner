@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { dia, shapes, linkTools, elementTools } from "jointjs";
+import { dia } from "jointjs";
 import UmlDesignerButtons from "./UmlDesignerButtons";
 import EditElementPanel from "./EditElementPanel";
 import EditLinkPanel from "./EditLinkPanel";
@@ -7,8 +7,15 @@ import UmlClass from "./UmlClass";
 import axios from "axios";
 import "jointjs/dist/joint.css";
 import "../styles/umlPaper.css";
-import { generateXml } from "../utils/generateXml";
-import { createDashedLink, createLink } from "../utils/linkCreators";
+import {
+  createAggregation,
+  createComposition,
+  createGeneralization,
+  createLink,
+} from "../utils/linkCreators";
+import createIntermediateClass from "../utils/createIntermediateClass";
+import exportToXml from "../utils/exportToXml";
+import { exportUmlDesign } from "../utils/exportUmlDesign";
 
 const UmlDesigner = () => {
   const graphRef = useRef(null);
@@ -21,9 +28,12 @@ const UmlDesigner = () => {
     methods: [],
   });
   const [isLinkMode, setIsLinkMode] = useState(false);
+  const [isCompositionMode, setIsCompositionMode] = useState(false);
+  const [isAggregationMode, setIsAggregationMode] = useState(false);
+  const [isGeneralizationMode, setIsGeneralizationMode] = useState(false);
+  const [isIntermediateClassMode, setIsIntermediateClassMode] = useState(false);
   const [sourceElement, setSourceElement] = useState(null);
   const [editingLink, setEditingLink] = useState(null);
-  const [isIntermediateClassMode, setIsIntermediateClassMode] = useState(false);
   const [linkValues, setLinkValues] = useState({
     associationType: "association",
     sourceMultiplicity: "1",
@@ -36,7 +46,7 @@ const UmlDesigner = () => {
       const paper = new dia.Paper({
         el: graphRef.current,
         model: graph,
-        width: 800,
+        width: 1000,
         height: 600,
         gridSize: 10,
         drawGrid: true,
@@ -69,24 +79,46 @@ const UmlDesigner = () => {
     (elementView) => {
       const element = elementView.model;
 
-      if (isLinkMode || isIntermediateClassMode) {
+      if (
+        isLinkMode ||
+        isCompositionMode ||
+        isAggregationMode ||
+        isGeneralizationMode ||
+        isIntermediateClassMode
+      ) {
         if (!sourceElement) {
           setSourceElement(element);
         } else {
           if (isLinkMode) {
             createLink(sourceElement.id, element.id, graphRef);
+          } else if (isCompositionMode) {
+            createComposition(sourceElement.id, element.id, graphRef);
+          } else if (isAggregationMode) {
+            createAggregation(sourceElement.id, element.id, graphRef);
+          } else if (isGeneralizationMode) {
+            createGeneralization(sourceElement.id, element.id, graphRef);
           } else if (isIntermediateClassMode) {
-            createIntermediateClass(sourceElement, element);
+            createIntermediateClass(sourceElement, element, graphRef, paperRef);
           }
           setSourceElement(null);
           setIsLinkMode(false);
+          setIsCompositionMode(false);
+          setIsAggregationMode(false);
+          setIsGeneralizationMode(false);
           setIsIntermediateClassMode(false);
         }
       } else {
         setSelectedElement(element);
       }
     },
-    [isLinkMode, isIntermediateClassMode, sourceElement]
+    [
+      isLinkMode,
+      isCompositionMode,
+      isAggregationMode,
+      isGeneralizationMode,
+      isIntermediateClassMode,
+      sourceElement,
+    ]
   );
 
   useEffect(() => {
@@ -97,57 +129,17 @@ const UmlDesigner = () => {
     }
   }, [handleElementClick]);
 
-  const createIntermediateClass = (source, target) => {
-    if (graphRef.current && paperRef.current) {
-      const sourcePosition = source.position();
-      const targetPosition = target.position();
-      const midX = (sourcePosition.x + targetPosition.x) / 2;
-      const midY = (sourcePosition.y + targetPosition.y) / 2;
-
-      // Create the intermediate class
-      const intermediateClass = new UmlClass({
-        position: { x: midX, y: midY + 100 }, // Position it slightly below the midpoint
-        size: { width: 200, height: 100 },
-        name: "IntermediateClass",
-        attributes: [],
-        methods: [],
-      });
-
-      graphRef.current.addCell(intermediateClass);
-
-      // Create the direct link between source and target
-      const directLink = createLink(source.id, target.id, graphRef);
-
-      // Create the dashed link to the intermediate class
-      createDashedLink(directLink, intermediateClass.id, graphRef);
-
-      // Add remove tool to the intermediate class
-      const elementView = intermediateClass.findView(paperRef.current);
-      elementView.addTools(
-        new dia.ToolsView({
-          tools: [new elementTools.Remove({ offset: { x: 10, y: 10 } })],
-        })
-      );
-    }
-  };
-
   const toggleIntermediateClassMode = useCallback(() => {
     setIsIntermediateClassMode((prev) => !prev);
     setIsLinkMode(false);
+    setIsCompositionMode(false);
+    setIsAggregationMode(false);
+    setIsGeneralizationMode(false);
     setSourceElement(null);
   }, []);
 
-  const exportToXml = () => {
-    const xmlContent = generateXml(graphRef);
-    if (xmlContent) {
-      const blob = new Blob([xmlContent], { type: "text/xml" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "uml_diagram.xml";
-      link.click();
-      URL.revokeObjectURL(url);
-    }
+  const handleExportToXml = () => {
+    exportToXml(graphRef);
   };
 
   const handleLinkClick = (linkView) => {
@@ -272,47 +264,42 @@ const UmlDesigner = () => {
     }
   };
 
-  const exportUmlDesign = async () => {
-    if (graphRef.current) {
-      const jsonGraph = graphRef.current.toJSON();
-
-      const filteredData = jsonGraph.cells.reduce(
-        (acc, cell) => {
-          if (cell.type === "uml.Class") {
-            acc.classes.push({
-              name: cell.name,
-              attributes: cell.attributes,
-              methods: cell.methods,
-            });
-          } else if (cell.type === "standard.Link") {
-            acc.links.push({
-              source: cell.source.id,
-              target: cell.target.id,
-            });
-          }
-          return acc;
-        },
-        { classes: [], links: [] }
-      );
-
-      console.log("Filtered UML data:", filteredData);
-
-      try {
-        const response = await axios.post(
-          "http://your-backend-url/api/generate-java-code",
-          filteredData
-        );
-        console.log("Java code generated successfully:", response.data);
-        alert("Java code generated successfully!");
-      } catch (error) {
-        console.error("Error generating Java code:", error);
-        alert("Error generating Java code. Please try again.");
-      }
-    }
+  const handleExportUmlDesign = () => {
+    exportUmlDesign(graphRef);
   };
 
   const toggleLinkMode = useCallback(() => {
     setIsLinkMode((prev) => !prev);
+    setIsCompositionMode(false);
+    setIsAggregationMode(false);
+    setIsGeneralizationMode(false);
+    setIsIntermediateClassMode(false);
+    setSourceElement(null);
+  }, []);
+
+  const toggleCompositionMode = useCallback(() => {
+    setIsCompositionMode((prev) => !prev);
+    setIsLinkMode(false);
+    setIsAggregationMode(false);
+    setIsGeneralizationMode(false);
+    setIsIntermediateClassMode(false);
+    setSourceElement(null);
+  }, []);
+
+  const toggleAggregationMode = useCallback(() => {
+    setIsAggregationMode((prev) => !prev);
+    setIsLinkMode(false);
+    setIsCompositionMode(false);
+    setIsGeneralizationMode(false);
+    setIsIntermediateClassMode(false);
+    setSourceElement(null);
+  }, []);
+
+  const toggleGeneralizationMode = useCallback(() => {
+    setIsGeneralizationMode((prev) => !prev);
+    setIsLinkMode(false);
+    setIsCompositionMode(false);
+    setIsAggregationMode(false);
     setIsIntermediateClassMode(false);
     setSourceElement(null);
   }, []);
@@ -323,8 +310,14 @@ const UmlDesigner = () => {
         addNewUmlClass={addNewUmlClass}
         toggleLinkMode={toggleLinkMode}
         isLinkMode={isLinkMode}
-        exportUmlDesign={exportUmlDesign}
-        exportToXml={exportToXml}
+        toggleCompositionMode={toggleCompositionMode}
+        isCompositionMode={isCompositionMode}
+        toggleAggregationMode={toggleAggregationMode}
+        isAggregationMode={isAggregationMode}
+        toggleGeneralizationMode={toggleGeneralizationMode}
+        isGeneralizationMode={isGeneralizationMode}
+        exportUmlDesign={handleExportUmlDesign}
+        exportToXml={handleExportToXml}
         toggleIntermediateClassMode={toggleIntermediateClassMode}
         isIntermediateClassMode={isIntermediateClassMode}
         deleteSelectedElement={deleteSelectedElement}
@@ -334,7 +327,7 @@ const UmlDesigner = () => {
         <div
           ref={graphRef}
           className="uml-paper"
-          style={{ flex: 1, height: "600px" }}
+          style={{ flex: 1, height: "130vh", width: "20vw" }}
         ></div>
         {editingElement && (
           <EditElementPanel

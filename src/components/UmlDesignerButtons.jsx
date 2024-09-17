@@ -4,6 +4,12 @@ const UmlDesignerButtons = ({
   addNewUmlClass,
   toggleLinkMode,
   isLinkMode,
+  toggleCompositionMode,
+  isCompositionMode,
+  toggleAggregationMode,
+  isAggregationMode,
+  toggleGeneralizationMode,
+  isGeneralizationMode,
   exportUmlDesign,
   exportToXml,
   toggleIntermediateClassMode,
@@ -14,16 +20,46 @@ const UmlDesignerButtons = ({
   return (
     <div style={{ marginBottom: "20px" }}>
       <button onClick={addNewUmlClass} style={{ marginRight: "10px" }}>
-        Add UML Class
+        Agregar Clase UML
       </button>
       <button
         onClick={toggleLinkMode}
         style={{
-          backgroundColor: isLinkMode ? "lightblue" : "white",
+          backgroundColor: isLinkMode ? "lightblue" : "blue",
           marginRight: "10px",
         }}
       >
-        {isLinkMode ? "Cancel Link" : "Create Link"}
+        {isLinkMode ? "Cancel" : "Crear Asociación"}
+      </button>
+      <button
+        onClick={toggleCompositionMode}
+        style={{
+          backgroundColor: isCompositionMode ? "lightblue" : "#FF6B6B",
+          color: "white",
+          marginRight: "10px",
+        }}
+      >
+        {isCompositionMode ? "Cancel" : "Crear Composición"}
+      </button>
+      <button
+        onClick={toggleAggregationMode}
+        style={{
+          backgroundColor: isAggregationMode ? "lightblue" : "#4ECDC4",
+          color: "white",
+          marginRight: "10px",
+        }}
+      >
+        {isAggregationMode ? "Cancel" : "Crear Agregación"}
+      </button>
+      <button
+        onClick={toggleGeneralizationMode}
+        style={{
+          backgroundColor: isGeneralizationMode ? "lightblue" : "#45B7D1",
+          color: "white",
+          marginRight: "10px",
+        }}
+      >
+        {isGeneralizationMode ? "Cancel" : "Crear Generalización"}
       </button>
       <button
         onClick={exportUmlDesign}
@@ -33,7 +69,7 @@ const UmlDesignerButtons = ({
           marginRight: "10px",
         }}
       >
-        Export UML Design
+        Generate Code
       </button>
       <button
         onClick={exportToXml}
@@ -43,7 +79,7 @@ const UmlDesignerButtons = ({
           marginRight: "10px",
         }}
       >
-        Export to XML
+        Convertir a UML
       </button>
       <button
         onClick={toggleIntermediateClassMode}
@@ -53,16 +89,14 @@ const UmlDesignerButtons = ({
           marginRight: "10px",
         }}
       >
-        {isIntermediateClassMode
-          ? "Cancel Intermediate"
-          : "Add Intermediate Class"}
+        {isIntermediateClassMode ? "Cancel" : "Agregar Clase Intermedia"}
       </button>
       <button
         onClick={deleteSelectedElement}
         style={{ backgroundColor: "#f44336", color: "white" }}
         disabled={!selectedElement}
       >
-        Delete Selected
+        Eliminar Seleccionado
       </button>
     </div>
   );
