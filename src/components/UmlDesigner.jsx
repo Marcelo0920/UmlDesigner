@@ -1,23 +1,73 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useParams } from "react-router-dom";
+import { connect } from "react-redux";
+import PropTypes from "prop-types";
+
+import { io } from "socket.io-client";
+
 import { dia } from "jointjs";
 import UmlDesignerButtons from "./UmlDesignerButtons";
 import EditElementPanel from "./EditElementPanel";
 import EditLinkPanel from "./EditLinkPanel";
 import UmlClass from "./UmlClass";
-import axios from "axios";
 import "jointjs/dist/joint.css";
 import "../styles/umlPaper.css";
 import {
   createAggregation,
   createComposition,
+  createDashedLink,
   createGeneralization,
+  createIntermediateClassLinks,
   createLink,
 } from "../utils/linkCreators";
 import createIntermediateClass from "../utils/createIntermediateClass";
 import exportToXml from "../utils/exportToXml";
 import { exportUmlDesign } from "../utils/exportUmlDesign";
+import { importDiagram } from "../utils/importDiagram";
 
-const UmlDesigner = () => {
+import {
+  getProject,
+  addClass,
+  addLink,
+  updateClassPosition,
+  deleteClass,
+  deleteLink,
+  updateClass,
+  updateLink,
+} from "../actions/project";
+import {
+  handleClassAdded,
+  handleClassDeleted,
+  handleClassPositionChanged,
+  handleClassUpdated,
+  handleLinkAdded,
+  handleLinkDeleted,
+  handleLinkUpdated,
+} from "../utils/handleClassSocket";
+import {
+  addNewUmlClass,
+  deleteSelectedElement,
+  handleEditSubmit,
+  handleLinkEditSubmit,
+} from "../utils/handleGraphElements";
+
+const UmlDesigner = ({
+  getProject,
+  addClass,
+  updateClass,
+  updateLink,
+  addLink,
+  updateClassPosition,
+  deleteClass,
+  deleteLink,
+  project: { project, loading },
+}) => {
+  const { id } = useParams();
+  const socketRef = useRef();
+  const [isRemoteUpdate, setIsRemoteUpdate] = useState(false);
+  const isRemoteUpdateRef = useRef(false);
+  const isDraggingRef = useRef(false);
+
   const graphRef = useRef(null);
   const paperRef = useRef(null);
   const [editingElement, setEditingElement] = useState(null);
@@ -39,6 +89,13 @@ const UmlDesigner = () => {
     sourceMultiplicity: "1",
     targetMultiplicity: "1",
   });
+
+  const [idMapping, setIdMapping] = useState({});
+  const idMappingRef = useRef({});
+
+  useEffect(() => {
+    getProject(id);
+  }, [getProject, id]);
 
   useEffect(() => {
     if (!graphRef.current || !paperRef.current) {
@@ -67,6 +124,243 @@ const UmlDesigner = () => {
     }
   }, []);
 
+  Object.keys(idMappingRef.current).find((key) => {
+    idMappingRef.current[key];
+  });
+
+  useEffect(() => {
+    // Initialize Socket.IO connection
+    socketRef.current = io("http://localhost:5000");
+
+    // Join the project room
+    socketRef.current.emit("join-project", id);
+
+    // Listen for real-time updates
+    socketRef.current.on("class-added", handleClassAddedCallback);
+    socketRef.current.on("class-updated", handleClassUpdatedCallback);
+    socketRef.current.on("class-deleted", handleClassDeletedCallback);
+    socketRef.current.on(
+      "class-position-changed",
+      handleClassPositionChangedCallback
+    );
+    socketRef.current.on("link-added", handleLinkAddedCallback);
+    socketRef.current.on("link-deleted", handleLinkDeletedCallback);
+    socketRef.current.on("link-updated", handleLinkUpdatedCallback);
+
+    return () => {
+      // Leave the project room and disconnect socket when component unmounts
+      socketRef.current.emit("leave-project", id);
+      socketRef.current.disconnect();
+    };
+  }, [id]);
+
+  const handleLinkAddedCallback = useCallback(
+    handleLinkAdded(id, graphRef, paperRef, idMappingRef),
+    [id]
+  );
+
+  const handleLinkDeletedCallback = useCallback(
+    handleLinkDeleted(id, graphRef, idMappingRef),
+    [id]
+  );
+
+  const handleLinkUpdatedCallback = useCallback(
+    handleLinkUpdated(id, graphRef, idMappingRef),
+    [id]
+  );
+
+  const handleClassPositionChangedCallback = useCallback(
+    handleClassPositionChanged(
+      id,
+      graphRef,
+      idMappingRef,
+      isRemoteUpdateRef,
+      setIsRemoteUpdate
+    ),
+    [id]
+  );
+
+  const handleClassAddedCallback = useCallback(
+    handleClassAdded(id, graphRef, setIdMapping),
+    [id]
+  );
+
+  const handleClassDeletedCallback = useCallback(
+    handleClassDeleted(id, graphRef, idMappingRef, setIdMapping),
+    [id, idMapping]
+  );
+
+  const handleClassUpdatedCallback = useCallback(
+    handleClassUpdated(id, graphRef, idMappingRef, idMapping),
+    [id, idMappingRef, idMapping]
+  );
+
+  const getPartialId = (fullId) => fullId.slice(0, -1);
+
+  useEffect(() => {
+    if (project && graphRef.current && paperRef.current && !loading) {
+      if (Object.keys(idMapping).length === 0) {
+        graphRef.current.clear();
+        const newIdMapping = {};
+
+        // Add classes
+        project.classes.forEach((classData) => {
+          const umlClass = new UmlClass({
+            position: classData.position,
+            size: classData.size,
+            name: [classData.name],
+            attributes: classData.attributes,
+            methods: classData.methods,
+          });
+          graphRef.current.addCell(umlClass);
+          newIdMapping[classData._id] = umlClass.id;
+        });
+
+        // Add links
+        project.links.forEach((linkData) => {
+          const sourceId = newIdMapping[linkData.source];
+          const targetId = newIdMapping[linkData.target];
+
+          if (sourceId && targetId) {
+            let linkId;
+            console.log(linkData);
+            switch (linkData.linkType) {
+              case "composition":
+                linkId = createComposition(
+                  sourceId,
+                  targetId,
+                  graphRef,
+                  paperRef
+                );
+                break;
+              case "aggregation":
+                linkId = createAggregation(
+                  sourceId,
+                  targetId,
+                  graphRef,
+                  paperRef
+                );
+                break;
+              case "generalization":
+                linkId = createGeneralization(
+                  sourceId,
+                  targetId,
+                  graphRef,
+                  paperRef
+                );
+                break;
+              case "intermediate":
+                // Find the intermediate class
+                const intermediateClassId = Object.entries(newIdMapping).find(
+                  ([key, value]) =>
+                    getPartialId(key).startsWith(getPartialId(linkData._id))
+                )?.[1];
+
+                console.log("New ID Mapping:", newIdMapping);
+                console.log("Intermediate Class ID:", intermediateClassId);
+                console.log("Link Data:", linkData);
+
+                if (intermediateClassId) {
+                  // Create the direct link between source and target
+                  console.log("intermediate class");
+                  const directLinkId = createLink(
+                    sourceId,
+                    targetId,
+                    graphRef,
+                    paperRef
+                  );
+
+                  // Create the dashed link from the direct link to the intermediate class
+                  const dashedLinkId = createDashedLink(
+                    directLinkId,
+                    intermediateClassId,
+                    graphRef,
+                    paperRef
+                  );
+
+                  // Store both link IDs in the mapping
+                  newIdMapping[linkData._id] = { directLinkId, dashedLinkId };
+
+                  // Ensure links are added to the graph
+                  const directLink = graphRef.current.getCell(directLinkId);
+                  const dashedLink = graphRef.current.getCell(dashedLinkId);
+                  console.log(directLink);
+                  console.log(dashedLink);
+                  if (!graphRef.current.getCell(directLinkId)) {
+                    graphRef.current.addCell(directLink);
+                  }
+                  if (!graphRef.current.getCell(dashedLinkId)) {
+                    graphRef.current.addCell(dashedLink);
+                  }
+                } else {
+                  console.error(
+                    "Intermediate class not found:",
+                    linkData.intermediateClass._id
+                  );
+                }
+                break;
+              default:
+                linkId = createLink(sourceId, targetId, graphRef, paperRef);
+            }
+
+            if (linkId) {
+              const link = graphRef.current.getCell(linkId);
+              if (link) {
+                link.label(0, {
+                  position: 0.5,
+                  attrs: { text: { text: linkData.linkType } },
+                });
+                link.label(1, {
+                  position: 0.1,
+                  attrs: { text: { text: linkData.sourceMultiplicity || "1" } },
+                });
+                link.label(2, {
+                  position: 0.9,
+                  attrs: { text: { text: linkData.targetMultiplicity || "1" } },
+                });
+              }
+              if (linkData.linkType !== "intermediate") {
+                newIdMapping[linkData._id] = linkId;
+              }
+            }
+          }
+        });
+
+        // Update the idMapping state
+        setIdMapping(newIdMapping);
+        idMappingRef.current = newIdMapping;
+
+        // Add event listener for position changes
+        paperRef.current.on("cell:pointerdown", (cellView, evt, x, y) => {
+          if (cellView.model instanceof UmlClass) {
+            isDraggingRef.current = true;
+          }
+        });
+
+        paperRef.current.on("cell:pointerup", (cellView, evt, x, y) => {
+          if (cellView.model instanceof UmlClass) {
+            isDraggingRef.current = false;
+            const cell = cellView.model;
+            const mongoDbId = Object.keys(idMappingRef.current).find(
+              (key) => idMappingRef.current[key] === cell.id
+            );
+            if (mongoDbId && !isRemoteUpdateRef.current) {
+              const newPosition = cell.position();
+              updateClassPosition(project._id, mongoDbId, newPosition);
+            }
+          }
+        });
+      }
+    }
+  }, [project, loading, updateClassPosition, id]);
+
+  const handleImportDiagram = useCallback(
+    (xmlContent) => {
+      importDiagram(xmlContent, graphRef, paperRef, addClass, addLink, id);
+    },
+    [graphRef, paperRef, addClass, addLink, id]
+  );
+
   useEffect(() => {
     if (paperRef.current) {
       paperRef.current
@@ -79,6 +373,16 @@ const UmlDesigner = () => {
     (elementView) => {
       const element = elementView.model;
 
+      // Find the MongoDB ID for the clicked element
+      const elementMongoId = Object.keys(idMapping).find(
+        (key) => idMapping[key] === element.id
+      );
+
+      if (!elementMongoId) {
+        console.error("Unable to find MongoDB ID for clicked element");
+        return;
+      }
+
       if (
         isLinkMode ||
         isCompositionMode ||
@@ -87,19 +391,47 @@ const UmlDesigner = () => {
         isIntermediateClassMode
       ) {
         if (!sourceElement) {
-          setSourceElement(element);
+          setSourceElement({ graphId: element.id, mongoId: elementMongoId });
         } else {
-          if (isLinkMode) {
-            createLink(sourceElement.id, element.id, graphRef);
-          } else if (isCompositionMode) {
-            createComposition(sourceElement.id, element.id, graphRef);
-          } else if (isAggregationMode) {
-            createAggregation(sourceElement.id, element.id, graphRef);
-          } else if (isGeneralizationMode) {
-            createGeneralization(sourceElement.id, element.id, graphRef);
-          } else if (isIntermediateClassMode) {
-            createIntermediateClass(sourceElement, element, graphRef, paperRef);
+          const updatedSourceGraphId = idMapping[sourceElement.mongoId];
+
+          if (!updatedSourceGraphId) {
+            console.error("Unable to find updated graph ID for source element");
+            return;
           }
+
+          let linkData;
+          if (isLinkMode) {
+            linkData = { linkType: "association" };
+          } else if (isCompositionMode) {
+            linkData = { linkType: "composition" };
+          } else if (isAggregationMode) {
+            linkData = { linkType: "aggregation" };
+          } else if (isGeneralizationMode) {
+            linkData = { linkType: "generalization" };
+          } else if (isIntermediateClassMode) {
+            linkData = createIntermediateClass(
+              updatedSourceGraphId,
+              element.id,
+              graphRef,
+              paperRef,
+              idMappingRef,
+              id
+            );
+          }
+
+          console.log("Link data before addLink:", linkData);
+
+          if (linkData) {
+            addLink(id, {
+              source: sourceElement.mongoId,
+              target: elementMongoId,
+              ...linkData,
+            });
+          } else {
+            console.error("Failed to create link");
+          }
+
           setSourceElement(null);
           setIsLinkMode(false);
           setIsCompositionMode(false);
@@ -108,7 +440,7 @@ const UmlDesigner = () => {
           setIsIntermediateClassMode(false);
         }
       } else {
-        setSelectedElement(element);
+        setSelectedElement({ graphId: element.id, mongoId: elementMongoId });
       }
     },
     [
@@ -118,8 +450,88 @@ const UmlDesigner = () => {
       isGeneralizationMode,
       isIntermediateClassMode,
       sourceElement,
+      id,
+      addLink,
+      idMapping,
+      graphRef,
+      paperRef,
     ]
   );
+
+  useEffect(() => {
+    if (graphRef.current && paperRef.current) {
+      const handlePositionChange = (cell) => {
+        if (cell instanceof UmlClass && !isRemoteUpdateRef.current) {
+          const mongoDbId = Object.keys(idMappingRef.current).find(
+            (key) => idMappingRef.current[key] === cell.id
+          );
+          if (mongoDbId) {
+            const newPosition = cell.position();
+
+            // Emit real-time update to all clients
+            socketRef.current.emit("class-position-changed", {
+              diagramId: id,
+              classId: mongoDbId,
+              newPosition: newPosition,
+            });
+
+            // Only save to server if not dragging
+            if (!isDraggingRef.current) {
+              updateClassPosition(id, mongoDbId, newPosition);
+            }
+          }
+        }
+      };
+
+      graphRef.current.on("change:position", handlePositionChange);
+
+      return () => {
+        graphRef.current?.off("change:position", handlePositionChange);
+      };
+    }
+  }, [id, updateClassPosition]);
+
+  useEffect(() => {
+    const handleRemotePositionChange = ({
+      diagramId,
+      classId,
+      newPosition,
+    }) => {
+      if (diagramId === id) {
+        isRemoteUpdateRef.current = true;
+        const jointjsId = idMappingRef.current[classId];
+        if (jointjsId) {
+          const cell = graphRef.current.getCell(jointjsId);
+          if (cell && cell instanceof UmlClass) {
+            cell.position(newPosition.x, newPosition.y);
+          }
+        }
+        setTimeout(() => {
+          isRemoteUpdateRef.current = false;
+        }, 0);
+      }
+    };
+
+    socketRef.current.on("class-position-changed", handleRemotePositionChange);
+
+    return () => {
+      socketRef.current.off(
+        "class-position-changed",
+        handleRemotePositionChange
+      );
+    };
+  }, [id]);
+
+  useEffect(() => {
+    socketRef.current.on("class-position-changed", handleClassPositionChanged);
+
+    return () => {
+      socketRef.current.off(
+        "class-position-changed",
+        handleClassPositionChanged
+      );
+    };
+  }, [handleClassPositionChanged]);
 
   useEffect(() => {
     if (paperRef.current) {
@@ -144,7 +556,12 @@ const UmlDesigner = () => {
 
   const handleLinkClick = (linkView) => {
     const link = linkView.model;
-    setSelectedElement(link);
+
+    const elementMongoId = Object.keys(idMappingRef.current).find(
+      (key) => idMappingRef.current[key] === link.id
+    );
+
+    setSelectedElement({ graphId: link.id, mongoId: elementMongoId });
   };
 
   const handleBlankClick = () => {
@@ -202,67 +619,48 @@ const UmlDesigner = () => {
     }));
   };
 
-  const handleEditSubmit = () => {
-    if (editingElement && paperRef.current) {
-      editingElement.set({
-        name: editValues.name,
-        attributes: editValues.attributes,
-        methods: editValues.methods,
-      });
-      editingElement.updateRectangles();
+  const handleEditSubmitCallback = useCallback(() => {
+    handleEditSubmit(
+      editingElement,
+      paperRef,
+      editValues,
+      idMapping,
+      updateClass,
+      id,
+      setEditingElement
+    );
+  }, [editingElement, paperRef, editValues, idMapping, updateClass, id]);
 
-      const elementView = paperRef.current.findViewByModel(editingElement);
-      if (elementView) {
-        elementView.update();
-        elementView.resize();
-      }
+  const handleLinkEditSubmitCallback = useCallback(() => {
+    handleLinkEditSubmit(
+      editingLink,
+      paperRef,
+      linkValues,
+      idMapping,
+      updateLink,
+      id,
+      setEditingLink
+    );
+  }, [editingLink, paperRef, linkValues, idMapping, updateLink, id]);
 
-      setEditingElement(null);
-    }
-  };
+  const addNewUmlClassCallback = useCallback(() => {
+    addNewUmlClass(graphRef, addClass, id, setIdMapping);
+  }, [graphRef, addClass, id]);
 
-  const handleLinkEditSubmit = () => {
-    if (editingLink && paperRef.current) {
-      editingLink.label(0, {
-        attrs: { text: { text: linkValues.associationType } },
-      });
-      editingLink.label(1, {
-        attrs: { text: { text: linkValues.sourceMultiplicity } },
-      });
-      editingLink.label(2, {
-        attrs: { text: { text: linkValues.targetMultiplicity } },
-      });
-
-      const linkView = editingLink.findView(paperRef.current);
-      if (linkView) {
-        linkView.update();
-      }
-
-      setEditingLink(null);
-    }
-  };
-
-  const addNewUmlClass = () => {
-    if (graphRef.current) {
-      const umlClass = new UmlClass({
-        position: { x: 50, y: 50 },
-        size: { width: 200, height: 100 },
-        name: ["NewClass"],
-        attributes: ["- attribute: Type"],
-        methods: ["+ method(): ReturnType"],
-      });
-      graphRef.current.addCell(umlClass);
-    }
-  };
-
-  const deleteSelectedElement = () => {
-    if (selectedElement && graphRef.current) {
-      selectedElement.remove();
-      setSelectedElement(null);
-      setEditingElement(null);
-      setEditingLink(null);
-    }
-  };
+  const deleteSelectedElementCallback = useCallback(() => {
+    deleteSelectedElement(
+      selectedElement,
+      graphRef,
+      idMapping,
+      deleteClass,
+      deleteLink,
+      id,
+      setSelectedElement,
+      setEditingElement,
+      setEditingLink,
+      setIdMapping
+    );
+  }, [selectedElement, graphRef, idMapping, deleteClass, deleteLink, id]);
 
   const handleExportUmlDesign = () => {
     exportUmlDesign(graphRef);
@@ -305,47 +703,80 @@ const UmlDesigner = () => {
   }, []);
 
   return (
-    <div>
-      <UmlDesignerButtons
-        addNewUmlClass={addNewUmlClass}
-        toggleLinkMode={toggleLinkMode}
-        isLinkMode={isLinkMode}
-        toggleCompositionMode={toggleCompositionMode}
-        isCompositionMode={isCompositionMode}
-        toggleAggregationMode={toggleAggregationMode}
-        isAggregationMode={isAggregationMode}
-        toggleGeneralizationMode={toggleGeneralizationMode}
-        isGeneralizationMode={isGeneralizationMode}
-        exportUmlDesign={handleExportUmlDesign}
-        exportToXml={handleExportToXml}
-        toggleIntermediateClassMode={toggleIntermediateClassMode}
-        isIntermediateClassMode={isIntermediateClassMode}
-        deleteSelectedElement={deleteSelectedElement}
-        selectedElement={selectedElement}
-      />
-      <div style={{ display: "flex" }}>
-        <div
-          ref={graphRef}
-          className="uml-paper"
-          style={{ flex: 1, height: "130vh", width: "20vw" }}
-        ></div>
-        {editingElement && (
-          <EditElementPanel
-            editValues={editValues}
-            handleEditChange={handleEditChange}
-            handleEditSubmit={handleEditSubmit}
+    <div className="uml-designer-container">
+      {loading ? (
+        <p>Cargando...</p>
+      ) : (
+        <>
+          <UmlDesignerButtons
+            addNewUmlClass={addNewUmlClassCallback}
+            toggleLinkMode={toggleLinkMode}
+            isLinkMode={isLinkMode}
+            toggleCompositionMode={toggleCompositionMode}
+            isCompositionMode={isCompositionMode}
+            toggleAggregationMode={toggleAggregationMode}
+            isAggregationMode={isAggregationMode}
+            toggleGeneralizationMode={toggleGeneralizationMode}
+            isGeneralizationMode={isGeneralizationMode}
+            exportUmlDesign={handleExportUmlDesign}
+            exportToXml={handleExportToXml}
+            toggleIntermediateClassMode={toggleIntermediateClassMode}
+            isIntermediateClassMode={isIntermediateClassMode}
+            deleteSelectedElement={deleteSelectedElementCallback}
+            selectedElement={selectedElement}
+            importDiagram={handleImportDiagram}
+            projectId={id}
           />
-        )}
-        {editingLink && (
-          <EditLinkPanel
-            linkValues={linkValues}
-            handleLinkEditChange={handleLinkEditChange}
-            handleLinkEditSubmit={handleLinkEditSubmit}
-          />
-        )}
-      </div>
+          <div style={{ display: "flex" }}>
+            <div
+              ref={graphRef}
+              className="uml-paper"
+              style={{ flex: 1, height: "130vh", width: "20vw" }}
+            ></div>
+            {editingElement && (
+              <EditElementPanel
+                editValues={editValues}
+                handleEditChange={handleEditChange}
+                handleEditSubmit={handleEditSubmitCallback}
+              />
+            )}
+            {editingLink && (
+              <EditLinkPanel
+                linkValues={linkValues}
+                handleLinkEditChange={handleLinkEditChange}
+                handleLinkEditSubmit={handleLinkEditSubmitCallback}
+              />
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 };
 
-export default UmlDesigner;
+UmlDesigner.propTypes = {
+  getProject: PropTypes.func.isRequired,
+  addClass: PropTypes.func.isRequired,
+  addLink: PropTypes.func.isRequired,
+  updateClassPosition: PropTypes.func.isRequired,
+  deleteClass: PropTypes.func.isRequired,
+  deleteLink: PropTypes.func.isRequired,
+  project: PropTypes.object.isRequired,
+  updateClass: PropTypes.func.isRequired,
+  updateLink: PropTypes.func.isRequired,
+};
+
+const mapStateToProps = (state) => ({
+  project: state.project,
+});
+
+export default connect(mapStateToProps, {
+  getProject,
+  addClass,
+  addLink,
+  updateClassPosition,
+  deleteClass,
+  deleteLink,
+  updateClass,
+  updateLink,
+})(UmlDesigner);

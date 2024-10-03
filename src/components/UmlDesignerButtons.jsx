@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState, useRef } from "react";
+import ShareProjectModal from "./ShareProjectModal";
 
 const UmlDesignerButtons = ({
   addNewUmlClass,
@@ -16,88 +17,65 @@ const UmlDesignerButtons = ({
   isIntermediateClassMode,
   deleteSelectedElement,
   selectedElement,
+  projectId,
+  importDiagram, // New prop for importing diagram
 }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleFileChange = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const xmlContent = e.target.result;
+        importDiagram(xmlContent);
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current.click();
+  };
+
   return (
-    <div style={{ marginBottom: "20px" }}>
-      <button onClick={addNewUmlClass} style={{ marginRight: "10px" }}>
-        Agregar Clase UML
-      </button>
-      <button
-        onClick={toggleLinkMode}
-        style={{
-          backgroundColor: isLinkMode ? "lightblue" : "blue",
-          marginRight: "10px",
-        }}
-      >
+    <div>
+      <button onClick={addNewUmlClass}>Agregar Clase UML</button>
+      <button onClick={toggleLinkMode}>
         {isLinkMode ? "Cancel" : "Crear Asociación"}
       </button>
-      <button
-        onClick={toggleCompositionMode}
-        style={{
-          backgroundColor: isCompositionMode ? "lightblue" : "#FF6B6B",
-          color: "white",
-          marginRight: "10px",
-        }}
-      >
+      <button onClick={toggleCompositionMode}>
         {isCompositionMode ? "Cancel" : "Crear Composición"}
       </button>
-      <button
-        onClick={toggleAggregationMode}
-        style={{
-          backgroundColor: isAggregationMode ? "lightblue" : "#4ECDC4",
-          color: "white",
-          marginRight: "10px",
-        }}
-      >
+      <button onClick={toggleAggregationMode}>
         {isAggregationMode ? "Cancel" : "Crear Agregación"}
       </button>
-      <button
-        onClick={toggleGeneralizationMode}
-        style={{
-          backgroundColor: isGeneralizationMode ? "lightblue" : "#45B7D1",
-          color: "white",
-          marginRight: "10px",
-        }}
-      >
+      <button onClick={toggleGeneralizationMode}>
         {isGeneralizationMode ? "Cancel" : "Crear Generalización"}
       </button>
-      <button
-        onClick={exportUmlDesign}
-        style={{
-          backgroundColor: "#4CAF50",
-          color: "white",
-          marginRight: "10px",
-        }}
-      >
-        Generate Code
-      </button>
-      <button
-        onClick={exportToXml}
-        style={{
-          backgroundColor: "#008CBA",
-          color: "white",
-          marginRight: "10px",
-        }}
-      >
-        Convertir a UML
-      </button>
-      <button
-        onClick={toggleIntermediateClassMode}
-        style={{
-          backgroundColor: isIntermediateClassMode ? "lightgreen" : "black",
-          color: "white",
-          marginRight: "10px",
-        }}
-      >
+      <button onClick={exportUmlDesign}>Generate Code</button>
+      <button onClick={exportToXml}>Convertir a UML</button>
+      <button onClick={toggleIntermediateClassMode}>
         {isIntermediateClassMode ? "Cancel" : "Agregar Clase Intermedia"}
       </button>
-      <button
-        onClick={deleteSelectedElement}
-        style={{ backgroundColor: "#f44336", color: "white" }}
-        disabled={!selectedElement}
-      >
+      <button onClick={deleteSelectedElement} disabled={!selectedElement}>
         Eliminar Seleccionado
       </button>
+      <button onClick={() => setIsModalOpen(true)}>Compartir Proyecto</button>
+      <button onClick={handleImportClick}>Importar Diagrama</button>
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: "none" }}
+        onChange={handleFileChange}
+        accept=".xml"
+      />
+      <ShareProjectModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        projectId={projectId}
+      />
     </div>
   );
 };

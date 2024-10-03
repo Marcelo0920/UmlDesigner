@@ -31,11 +31,33 @@ export const exportUmlDesign = async (graphRef) => {
 
     try {
       const response = await axios.post(
-        "http://your-backend-url/api/generate-java-code",
-        filteredData
+        "http://localhost:5000/generator",
+        filteredData,
+        {
+          responseType: "blob", // Important: Set the response type to blob
+        }
       );
-      console.log("Java code generated successfully:", response.data);
-      alert("Java code generated successfully!");
+
+      // Create a blob from the response data
+      const blob = new Blob([response.data], { type: "application/zip" });
+
+      // Create a temporary URL for the blob
+      const url = window.URL.createObjectURL(blob);
+
+      // Create a temporary anchor element and trigger the download
+      const a = document.createElement("a");
+      a.style.display = "none";
+      a.href = url;
+      a.download = "generated_classes.zip";
+      document.body.appendChild(a);
+      a.click();
+
+      // Clean up
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      console.log("Java code generated and downloaded successfully");
+      alert("Java code generated and downloaded successfully!");
     } catch (error) {
       console.error("Error generating Java code:", error);
       alert("Error generating Java code. Please try again.");

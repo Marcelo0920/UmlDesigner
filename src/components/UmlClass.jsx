@@ -93,10 +93,21 @@ const UmlClass = dia.Element.define(
       ];
 
       var offsetY = 0;
+      var totalHeight = this.get("size").height || 200; // Use the element's height or a default
+      var nameHeight = 30; // Fixed height for the name section
+      var remainingHeight = totalHeight - nameHeight;
 
-      rects.forEach(function (rect) {
+      rects.forEach(function (rect, index) {
         var lines = Array.isArray(rect.text) ? rect.text : [rect.text];
-        var rectHeight = lines.length * 20 + 20;
+        var rectHeight;
+
+        if (index === 0) {
+          // Name section
+          rectHeight = nameHeight;
+        } else {
+          // Attributes and Methods sections
+          rectHeight = remainingHeight / 2; // Divide remaining space equally
+        }
 
         attrs[".uml-class-" + rect.type + "-text"].text = lines.join("\n");
         attrs[".uml-class-" + rect.type + "-rect"].height = rectHeight;
