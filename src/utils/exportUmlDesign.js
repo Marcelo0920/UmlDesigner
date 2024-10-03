@@ -31,7 +31,7 @@ export const exportUmlDesign = async (graphRef) => {
 
     try {
       const response = await axios.post(
-        "http://localhost:5000/generator",
+        "https://uml-diagramer-back.onrender.com/generator",
         filteredData,
         {
           responseType: "blob", // Important: Set the response type to blob

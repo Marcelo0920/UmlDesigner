@@ -130,7 +130,7 @@ const UmlDesigner = ({
 
   useEffect(() => {
     // Initialize Socket.IO connection
-    socketRef.current = io("http://localhost:5000");
+    socketRef.current = io("https://uml-diagramer-back.onrender.com");
 
     // Join the project room
     socketRef.current.emit("join-project", id);
