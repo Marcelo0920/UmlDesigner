@@ -1,6 +1,7 @@
 import { generateXml } from "./generateXml";
 
 const exportToXml = (graphRef) => {
+  console.log(graphRef);
   const xmlContent = generateXml(graphRef);
   if (xmlContent) {
     const blob = new Blob([xmlContent], { type: "text/xml" });

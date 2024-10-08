@@ -4,8 +4,11 @@ import {
   createComposition,
   createAggregation,
   createGeneralization,
-  createIntermediateClassLinks,
+  createDependency,
+  createDashedLink,
 } from "./linkCreators";
+
+import createIntermediateClass from "./createIntermediateClass";
 
 export const importDiagram = (
   xmlContent,
@@ -22,118 +25,185 @@ export const importDiagram = (
   graphRef.current.clear();
 
   // Import classes
-  const classes = xmlDoc.getElementsByTagName("packagedElement");
+  const classes = xmlDoc.getElementsByTagName("UML:Class");
   const classMap = new Map();
 
   const classPromises = Array.from(classes).map(async (classElement) => {
-    if (classElement.getAttribute("xmi:type") === "uml:Class") {
-      const className = classElement.getAttribute("name");
-      const classId = classElement.getAttribute("xmi:id");
+    const className = classElement.getAttribute("name");
+    const classId = classElement.getAttribute("xmi.id");
 
-      const attributes = Array.from(
-        classElement.getElementsByTagName("ownedAttribute")
-      ).map(
-        (attr) => `${attr.getAttribute("name")}: ${attr.getAttribute("type")}`
-      );
+    // Skip EARootClass
+    if (className === "EARootClass") {
+      return null;
+    }
 
-      const methods = Array.from(
-        classElement.getElementsByTagName("ownedOperation")
-      ).map((method) => {
-        const returnType =
-          method
-            .getElementsByTagName("ownedParameter")[0]
-            ?.getElementsByTagName("type")[0]
-            ?.getAttribute("href")
-            ?.split("#")[1] || "void";
-        return `${method.getAttribute("name")}: ${returnType}`;
-      });
+    const attributes = Array.from(
+      classElement.getElementsByTagName("UML:Attribute")
+    ).map(
+      (attr) => `${attr.getAttribute("name")}: ${attr.getAttribute("type")}`
+    );
 
-      const position = { x: Math.random() * 500, y: Math.random() * 500 };
-      const size = { width: 200, height: 100 };
+    const methods = Array.from(
+      classElement.getElementsByTagName("UML:Operation")
+    ).map((method) => {
+      const returnType = method.getAttribute("returnType") || "void";
+      return `${method.getAttribute("name")}: ${returnType}`;
+    });
 
-      const classData = {
+    const position = { x: Math.random() * 500, y: Math.random() * 500 };
+    const size = { width: 200, height: 100 };
+
+    const classData = {
+      name: className,
+      attributes,
+      methods,
+      position,
+      size,
+    };
+
+    try {
+      const response = await addClass(id, classData);
+      const newClassId = response.classes[response.classes.length - 1]._id;
+
+      const umlClass = new UmlClass({
+        position,
+        size,
         name: className,
         attributes,
         methods,
-        position,
-        size,
-      };
+      });
 
-      try {
-        const response = await addClass(id, classData);
-        const newClassId = response.classes[response.classes.length - 1]._id;
+      graphRef.current.addCell(umlClass);
+      classMap.set(classId, { graphId: umlClass.id, dbId: newClassId });
 
-        const umlClass = new UmlClass({
-          position,
-          size,
-          name: className,
-          attributes,
-          methods,
-        });
-
-        graphRef.current.addCell(umlClass);
-        classMap.set(classId, { graphId: umlClass.id, dbId: newClassId });
-
-        return { xmlId: classId, graphId: umlClass.id, dbId: newClassId };
-      } catch (error) {
-        console.error("Error adding class:", error);
-      }
+      return { xmlId: classId, graphId: umlClass.id, dbId: newClassId };
+    } catch (error) {
+      console.error("Error adding class:", error);
     }
   });
 
   Promise.all(classPromises).then(() => {
     // Import associations and other relationship types
-    const relationships = xmlDoc.getElementsByTagName("packagedElement");
-    Array.from(relationships).forEach((relationshipElement) => {
-      const relationType = relationshipElement.getAttribute("xmi:type");
+    const relationships = [
+      ...xmlDoc.getElementsByTagName("UML:Association"),
+      ...xmlDoc.getElementsByTagName("UML:Generalization"),
+      ...xmlDoc.getElementsByTagName("UML:Dependency"),
+      ...xmlDoc.getElementsByTagName("UML:Composition"),
+      ...xmlDoc.getElementsByTagName("UML:Aggregation"),
+      ...xmlDoc.getElementsByTagName("UML:AssociationClass"),
+    ];
 
-      if (
-        relationType === "uml:Association" ||
-        relationType === "uml:Generalization"
-      ) {
-        let sourceId, targetId, linkType;
+    relationships.forEach((relationshipElement) => {
+      let sourceId, targetId, linkType, intermediateClassId;
 
-        if (relationType === "uml:Association") {
-          const memberEnds =
-            relationshipElement.getElementsByTagName("memberEnd");
-          sourceId = memberEnds[0]?.getAttribute("xmi:idref")?.split("_")[0];
-          targetId = memberEnds[1]?.getAttribute("xmi:idref")?.split("_")[0];
+      console.log(relationshipElement);
 
-          const ownedEnds =
-            relationshipElement.getElementsByTagName("ownedEnd");
-          const aggregation =
-            ownedEnds[0]?.getAttribute("aggregation") ||
-            ownedEnds[1]?.getAttribute("aggregation");
+      switch (relationshipElement.tagName) {
+        case "UML:Association":
+          const sourceEnd =
+            relationshipElement.getElementsByTagName("UML:AssociationEnd")[0];
+          const targetEnd =
+            relationshipElement.getElementsByTagName("UML:AssociationEnd")[1];
 
-          if (aggregation === "composite") {
-            linkType = "composition";
-          } else if (aggregation === "shared") {
-            linkType = "aggregation";
-          } else {
+          if (sourceEnd && targetEnd) {
+            sourceId = sourceEnd.getAttribute("type");
+            targetId = targetEnd.getAttribute("type");
+
+            if (
+              relationshipElement.getAttribute("name") == "IntermediateClass"
+            ) {
+              linkType = "intermediate";
+            }
             linkType = "association";
+
+            const sourceAggregation = sourceEnd.getAttribute("aggregation");
+            const targetAggregation = targetEnd.getAttribute("aggregation");
+
+            if (
+              sourceAggregation === "composite" ||
+              targetAggregation === "composite"
+            ) {
+              linkType = "composition";
+              // Swap source and target for composition
+              [sourceId, targetId] = [targetId, sourceId];
+            } else if (
+              sourceAggregation === "shared" ||
+              targetAggregation === "shared"
+            ) {
+              linkType = "aggregation";
+              // Swap source and target for aggregation
+              [sourceId, targetId] = [targetId, sourceId];
+            }
           }
-        } else if (relationType === "uml:Generalization") {
-          sourceId = relationshipElement.getAttribute("specific");
-          targetId = relationshipElement.getAttribute("general");
+          break;
+
+        case "UML:Generalization":
+          sourceId = relationshipElement.getAttribute("subtype");
+          targetId = relationshipElement.getAttribute("supertype");
           linkType = "generalization";
-        }
+          break;
 
-        if (sourceId && targetId) {
-          const sourceIds = classMap.get(sourceId);
-          const targetIds = classMap.get(targetId);
+        case "UML:Dependency":
+          sourceId = relationshipElement.getAttribute("client");
+          targetId = relationshipElement.getAttribute("supplier");
+          linkType = "dependency";
+          break;
 
-          if (sourceIds && targetIds) {
-            let linkId;
+        case "UML:Composition":
+          // Swap source and target for composition
+          targetId = relationshipElement.getAttribute("whole");
+          sourceId = relationshipElement.getAttribute("part");
+          linkType = "composition";
+          break;
 
+        case "UML:Aggregation":
+          // Swap source and target for aggregation
+          targetId = relationshipElement.getAttribute("whole");
+          sourceId = relationshipElement.getAttribute("part");
+          linkType = "aggregation";
+          break;
+
+        case "UML:AssociationClass":
+          const associationEnds =
+            relationshipElement.getElementsByTagName("UML:AssociationEnd");
+          sourceId = associationEnds[0]?.getAttribute("type");
+          targetId = associationEnds[1]?.getAttribute("type");
+          intermediateClassId = relationshipElement.getAttribute("xmi.id");
+          linkType = "associationClass";
+          break;
+      }
+
+      if (sourceId && targetId) {
+        const sourceIds = classMap.get(sourceId);
+        const targetIds = classMap.get(targetId);
+
+        if (sourceIds && targetIds) {
+          let linkId;
+
+          console.log(linkType);
+          if (linkType === "intermediate") {
+            linkId = createDashedLink(
+              sourceIds.graphId,
+              targetIds.graphId,
+              graphRef,
+              paperRef
+            );
+          }
+          if (linkType === "associationClass") {
+            const intermediateClassInfo = createIntermediateClass(
+              sourceIds.graphId,
+              targetIds.graphId,
+              graphRef,
+              paperRef,
+              idMappingRef,
+              id
+            );
+
+            if (intermediateClassInfo) {
+              addLink(id, intermediateClassInfo);
+            }
+          } else {
             switch (linkType) {
-              case "generalization":
-                linkId = createGeneralization(
-                  sourceIds.graphId,
-                  targetIds.graphId,
-                  graphRef,
-                  paperRef
-                );
-                break;
               case "composition":
                 linkId = createComposition(
                   sourceIds.graphId,
@@ -144,6 +214,22 @@ export const importDiagram = (
                 break;
               case "aggregation":
                 linkId = createAggregation(
+                  sourceIds.graphId,
+                  targetIds.graphId,
+                  graphRef,
+                  paperRef
+                );
+                break;
+              case "generalization":
+                linkId = createGeneralization(
+                  sourceIds.graphId,
+                  targetIds.graphId,
+                  graphRef,
+                  paperRef
+                );
+                break;
+              case "dependency":
+                linkId = createDependency(
                   sourceIds.graphId,
                   targetIds.graphId,
                   graphRef,
@@ -164,41 +250,6 @@ export const importDiagram = (
                 source: sourceIds.dbId,
                 target: targetIds.dbId,
                 linkType: linkType,
-              });
-            }
-          }
-        }
-      } else if (relationType === "uml:AssociationClass") {
-        const memberEnds =
-          relationshipElement.getElementsByTagName("memberEnd");
-        const sourceId = memberEnds[0]
-          ?.getAttribute("xmi:idref")
-          ?.split("_")[0];
-        const targetId = memberEnds[1]
-          ?.getAttribute("xmi:idref")
-          ?.split("_")[0];
-        const intermediateClassId = relationshipElement.getAttribute("xmi:id");
-
-        if (sourceId && targetId && intermediateClassId) {
-          const sourceIds = classMap.get(sourceId);
-          const targetIds = classMap.get(targetId);
-          const intermediateIds = classMap.get(intermediateClassId);
-
-          if (sourceIds && targetIds && intermediateIds) {
-            const { directLinkId, dashedLinkId } = createIntermediateClassLinks(
-              sourceIds.graphId,
-              targetIds.graphId,
-              intermediateIds.graphId,
-              graphRef,
-              paperRef
-            );
-
-            if (directLinkId && dashedLinkId) {
-              addLink(id, {
-                source: sourceIds.dbId,
-                target: targetIds.dbId,
-                linkType: "intermediate",
-                intermediateClass: intermediateIds.dbId,
               });
             }
           }

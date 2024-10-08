@@ -29,7 +29,7 @@ export const loadUser = () => async (dispatch) => {
     try {
       console.log("trying this");
       const res = await axios.get(
-        "https://uml-diagramer-back.onrender.com/user/loaduser",
+        "http://localhost:5000/user/loaduser",
         config
       );
 
@@ -67,7 +67,7 @@ export const login = (email, password) => async (dispatch) => {
 
   try {
     const res = await axios.post(
-      "https://uml-diagramer-back.onrender.com/user/login",
+      "http://localhost:5000/user/login",
       body,
       config
     );
@@ -106,7 +106,7 @@ export const register = (formData) => async (dispatch) => {
 
   try {
     const res = await axios.post(
-      "https://uml-diagramer-back.onrender.com/user/register",
+      "http://localhost:5000/user/register",
       body,
       config
     );

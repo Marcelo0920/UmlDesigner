@@ -10,7 +10,9 @@ const UmlDesignerButtons = ({
   toggleAggregationMode,
   isAggregationMode,
   toggleGeneralizationMode,
+  toggleDependencyMode,
   isGeneralizationMode,
+  isDependenciaMode,
   exportUmlDesign,
   exportToXml,
   toggleIntermediateClassMode,
@@ -52,7 +54,10 @@ const UmlDesignerButtons = ({
         {isAggregationMode ? "Cancel" : "Crear Agregación"}
       </button>
       <button onClick={toggleGeneralizationMode}>
-        {isGeneralizationMode ? "Cancel" : "Crear Generalización"}
+        {isGeneralizationMode ? "Cancel" : "Crear Herencia"}
+      </button>
+      <button onClick={toggleDependencyMode}>
+        {isDependenciaMode ? "Cancel" : "Crear Dependencia"}
       </button>
       <button onClick={exportUmlDesign}>Generate Code</button>
       <button onClick={exportToXml}>Convertir a UML</button>

@@ -29,7 +29,15 @@ const createLinkWithType = (sourceId, targetId, graphRef, paperRef, type) => {
       case "generalization":
         linkAttrs.line.targetMarker = {
           type: "path",
-          d: "M 20 0 L 0 -10 L 0 10 Z",
+          d: "M 20 -10 L 0 0 L 20 10 L 20 0 Z",
+          fill: "white",
+        };
+        break;
+
+      case "dependency":
+        linkAttrs.line.targetMarker = {
+          type: "path",
+          d: "M 20 -10 L 0 0 L 20 10 L 0 0 Z",
           fill: "white",
         };
         break;
@@ -37,34 +45,68 @@ const createLinkWithType = (sourceId, targetId, graphRef, paperRef, type) => {
         linkAttrs.line.targetMarker = null;
     }
 
-    const link = new shapes.standard.Link({
-      source: { id: sourceId },
-      target: { id: targetId },
-      router: { name: "manhattan" },
-      connector: { name: "rounded" },
-      attrs: linkAttrs,
-      labels: [
-        {
-          position: 0.5,
-          attrs: {
-            text: { text: type },
+    let link;
+
+    if (type == "dependency") {
+      link = new shapes.standard.Link({
+        source: { id: sourceId },
+        target: { id: targetId },
+        router: { name: "manhattan" },
+        connector: { name: "rounded" },
+        attrs: {
+          line: {
+            stroke: "#333333",
+            strokeWidth: 2,
+            strokeDasharray: "5 5",
+            targetMarker: null,
+            sourceMarker: null,
+            targetMarker: {
+              type: "path",
+              d: "M 20 -10 L 0 0 L 20 10 L 0 0 Z",
+              fill: "white",
+            },
           },
         },
-        {
-          position: 0.1,
-          attrs: {
-            text: { text: "1..1" }, // Default source multiplicity
+        labels: [
+          {
+            position: 0.5,
+            attrs: {
+              text: { text: type },
+            },
           },
-        },
-        {
-          position: 0.9,
-          attrs: {
-            text: { text: "1..1" }, // Default target multiplicity
+        ],
+        linkType: type,
+      });
+    } else {
+      link = new shapes.standard.Link({
+        source: { id: sourceId },
+        target: { id: targetId },
+        router: { name: "manhattan" },
+        connector: { name: "rounded" },
+        attrs: linkAttrs,
+        labels: [
+          {
+            position: 0.5,
+            attrs: {
+              text: { text: type },
+            },
           },
-        },
-      ],
-      linkType: type,
-    });
+          {
+            position: 0.1,
+            attrs: {
+              text: { text: "1..1" }, // Default source multiplicity
+            },
+          },
+          {
+            position: 0.9,
+            attrs: {
+              text: { text: "1..1" }, // Default target multiplicity
+            },
+          },
+        ],
+        linkType: type,
+      });
+    }
 
     graphRef.current.addCell(link);
 
@@ -161,11 +203,22 @@ export const createGeneralization = (
   graphRef,
   paperRef
 ) => {
+  console.log("calling here");
   return createLinkWithType(
     sourceId,
     targetId,
     graphRef,
     paperRef,
     "generalization"
+  );
+};
+
+export const createDependency = (sourceId, targetId, graphRef, paperRef) => {
+  return createLinkWithType(
+    sourceId,
+    targetId,
+    graphRef,
+    paperRef,
+    "dependency"
   );
 };

@@ -16,6 +16,7 @@ import {
   createAggregation,
   createComposition,
   createDashedLink,
+  createDependency,
   createGeneralization,
   createIntermediateClassLinks,
   createLink,
@@ -81,6 +82,7 @@ const UmlDesigner = ({
   const [isCompositionMode, setIsCompositionMode] = useState(false);
   const [isAggregationMode, setIsAggregationMode] = useState(false);
   const [isGeneralizationMode, setIsGeneralizationMode] = useState(false);
+  const [isDependenciaMode, setisDependencyMode] = useState(false);
   const [isIntermediateClassMode, setIsIntermediateClassMode] = useState(false);
   const [sourceElement, setSourceElement] = useState(null);
   const [editingLink, setEditingLink] = useState(null);
@@ -130,7 +132,7 @@ const UmlDesigner = ({
 
   useEffect(() => {
     // Initialize Socket.IO connection
-    socketRef.current = io("https://uml-diagramer-back.onrender.com");
+    socketRef.current = io("http://localhost:5000");
 
     // Join the project room
     socketRef.current.emit("join-project", id);
@@ -223,7 +225,6 @@ const UmlDesigner = ({
 
           if (sourceId && targetId) {
             let linkId;
-            console.log(linkData);
             switch (linkData.linkType) {
               case "composition":
                 linkId = createComposition(
@@ -241,6 +242,14 @@ const UmlDesigner = ({
                   paperRef
                 );
                 break;
+              case "dependency":
+                linkId = createDependency(
+                  sourceId,
+                  targetId,
+                  graphRef,
+                  paperRef
+                );
+                break;
               case "generalization":
                 linkId = createGeneralization(
                   sourceId,
@@ -249,6 +258,7 @@ const UmlDesigner = ({
                   paperRef
                 );
                 break;
+
               case "intermediate":
                 // Find the intermediate class
                 const intermediateClassId = Object.entries(newIdMapping).find(
@@ -388,6 +398,7 @@ const UmlDesigner = ({
         isCompositionMode ||
         isAggregationMode ||
         isGeneralizationMode ||
+        isDependenciaMode ||
         isIntermediateClassMode
       ) {
         if (!sourceElement) {
@@ -409,6 +420,8 @@ const UmlDesigner = ({
             linkData = { linkType: "aggregation" };
           } else if (isGeneralizationMode) {
             linkData = { linkType: "generalization" };
+          } else if (isDependenciaMode) {
+            linkData = { linkType: "dependency" };
           } else if (isIntermediateClassMode) {
             linkData = createIntermediateClass(
               updatedSourceGraphId,
@@ -437,6 +450,7 @@ const UmlDesigner = ({
           setIsCompositionMode(false);
           setIsAggregationMode(false);
           setIsGeneralizationMode(false);
+          setisDependencyMode(false);
           setIsIntermediateClassMode(false);
         }
       } else {
@@ -448,6 +462,7 @@ const UmlDesigner = ({
       isCompositionMode,
       isAggregationMode,
       isGeneralizationMode,
+      isDependenciaMode,
       isIntermediateClassMode,
       sourceElement,
       id,
@@ -547,6 +562,7 @@ const UmlDesigner = ({
     setIsCompositionMode(false);
     setIsAggregationMode(false);
     setIsGeneralizationMode(false);
+    setisDependencyMode(false);
     setSourceElement(null);
   }, []);
 
@@ -671,6 +687,7 @@ const UmlDesigner = ({
     setIsCompositionMode(false);
     setIsAggregationMode(false);
     setIsGeneralizationMode(false);
+    setisDependencyMode(false);
     setIsIntermediateClassMode(false);
     setSourceElement(null);
   }, []);
@@ -680,6 +697,7 @@ const UmlDesigner = ({
     setIsLinkMode(false);
     setIsAggregationMode(false);
     setIsGeneralizationMode(false);
+    setisDependencyMode(false);
     setIsIntermediateClassMode(false);
     setSourceElement(null);
   }, []);
@@ -689,6 +707,7 @@ const UmlDesigner = ({
     setIsLinkMode(false);
     setIsCompositionMode(false);
     setIsGeneralizationMode(false);
+    setisDependencyMode(false);
     setIsIntermediateClassMode(false);
     setSourceElement(null);
   }, []);
@@ -698,6 +717,17 @@ const UmlDesigner = ({
     setIsLinkMode(false);
     setIsCompositionMode(false);
     setIsAggregationMode(false);
+    setisDependencyMode(false);
+    setIsIntermediateClassMode(false);
+    setSourceElement(null);
+  }, []);
+
+  const toggleDependencyMode = useCallback(() => {
+    setisDependencyMode((prev) => !prev);
+    setIsLinkMode(false);
+    setIsCompositionMode(false);
+    setIsAggregationMode(false);
+    setIsGeneralizationMode(false);
     setIsIntermediateClassMode(false);
     setSourceElement(null);
   }, []);
@@ -718,6 +748,8 @@ const UmlDesigner = ({
             isAggregationMode={isAggregationMode}
             toggleGeneralizationMode={toggleGeneralizationMode}
             isGeneralizationMode={isGeneralizationMode}
+            toggleDependencyMode={toggleDependencyMode}
+            isDependenciaMode={isDependenciaMode}
             exportUmlDesign={handleExportUmlDesign}
             exportToXml={handleExportToXml}
             toggleIntermediateClassMode={toggleIntermediateClassMode}

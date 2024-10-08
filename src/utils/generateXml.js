@@ -12,11 +12,13 @@ export const generateXml = (graphRef) => {
         (link) =>
           link.type === "standard.Link" &&
           link.target.id === cell.id &&
-          link.attrs?.line?.strokeDasharray
+          link.attrs?.line?.strokeDasharray &&
+          link.linkType != "dependency"
       );
     };
 
     // Generate class elements
+
     jsonGraph.cells.forEach((cell) => {
       if (cell.type === "uml.Class" && !isIntermediateClass(cell)) {
         xmlContent += `    <packagedElement xmi:type="uml:Class" xmi:id="${cell.id}" name="${cell.name}">\n`;
@@ -54,7 +56,7 @@ export const generateXml = (graphRef) => {
         // Check if this is a dashed link (connection to intermediate class)
         const isDashed = cell.attrs?.line?.strokeDasharray;
 
-        if (isDashed) {
+        if (isDashed && associationType != "dependency") {
           // This is a link to an intermediate class
           intermediateClasses.set(cell.id, {
             intermediateClassId: targetId,
@@ -206,6 +208,14 @@ export const generateXml = (graphRef) => {
                   xmlContent.slice(insertPosition);
               }
             }
+            break;
+
+          case "dependency":
+            // Handle Dependency relationship
+            xmlContent += `    <packagedElement xmi:type="uml:Dependency" xmi:id="${associationId}">\n`;
+            xmlContent += `      <client xmi:idref="${association.sourceId}"/>\n`;
+            xmlContent += `      <supplier xmi:idref="${association.targetId}"/>\n`;
+            xmlContent += `    </packagedElement>\n`;
             break;
 
           default: // Regular association

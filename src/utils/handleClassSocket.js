@@ -4,6 +4,7 @@ import {
   createAggregation,
   createComposition,
   createGeneralization,
+  createDependency,
   createLink,
 } from "./linkCreators";
 
@@ -132,6 +133,9 @@ export const handleLinkAdded =
             break;
           case "generalization":
             link = createGeneralization(sourceId, targetId, graphRef, paperRef);
+            break;
+          case "dependency":
+            link = createDependency(sourceId, targetId, graphRef, paperRef);
             break;
           default:
             link = createLink(sourceId, targetId, graphRef, paperRef);

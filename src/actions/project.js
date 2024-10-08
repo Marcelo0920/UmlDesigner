@@ -18,7 +18,7 @@ import {
   SET_DEFAULT,
 } from "./type";
 
-const socket = io("https://uml-diagramer-back.onrender.com");
+const socket = io("http://localhost:5000");
 
 export const createProject = (projectData) => async (dispatch) => {
   try {
@@ -31,7 +31,7 @@ export const createProject = (projectData) => async (dispatch) => {
     console.log(projectData);
 
     const res = await axios.post(
-      "https://uml-diagramer-back.onrender.com/diagrams/",
+      "http://localhost:5000/diagrams/",
       projectData
     );
 
@@ -60,10 +60,7 @@ export const getProjects = () => async (dispatch) => {
       },
     };
 
-    const res = await axios.get(
-      "https://uml-diagramer-back.onrender.com/diagrams/",
-      config
-    );
+    const res = await axios.get("http://localhost:5000/diagrams/", config);
 
     dispatch({
       type: GET_PROJECTS,
@@ -88,10 +85,7 @@ export const getProject = (id) => async (dispatch) => {
       },
     };
 
-    const res = await axios.get(
-      `https://uml-diagramer-back.onrender.com/diagrams/${id}`,
-      config
-    );
+    const res = await axios.get(`http://localhost:5000/diagrams/${id}`, config);
 
     dispatch({
       type: GET_PROJECT,
@@ -117,7 +111,7 @@ export const addClass = (diagramId, classData) => async (dispatch) => {
     };
 
     const res = await axios.post(
-      `https://uml-diagramer-back.onrender.com/diagrams/${diagramId}/classes`,
+      `http://localhost:5000/diagrams/${diagramId}/classes`,
       classData,
       config
     );
@@ -144,7 +138,7 @@ export const deleteClass = (diagramId, classId) => async (dispatch) => {
   try {
     console.log("Sending delete request for class:", classId);
     await axios.delete(
-      `https://uml-diagramer-back.onrender.com/diagrams/${diagramId}/classes/${classId}`
+      `http://localhost:5000/diagrams/${diagramId}/classes/${classId}`
     );
 
     dispatch({
@@ -171,7 +165,7 @@ export const addLink = (diagramId, linkData) => async (dispatch) => {
     };
 
     const res = await axios.post(
-      `https://uml-diagramer-back.onrender.com/diagrams/${diagramId}/links`,
+      `http://localhost:5000/diagrams/${diagramId}/links`,
       linkData,
       config
     );
@@ -200,7 +194,7 @@ export const addLink = (diagramId, linkData) => async (dispatch) => {
 export const deleteLink = (diagramId, linkId) => async (dispatch) => {
   try {
     await axios.delete(
-      `https://uml-diagramer-back.onrender.com/diagrams/${diagramId}/links/${linkId}`
+      `http://localhost:5000/diagrams/${diagramId}/links/${linkId}`
     );
 
     dispatch({
@@ -231,7 +225,7 @@ export const updateClassPosition =
       };
 
       const res = await axios.put(
-        `https://uml-diagramer-back.onrender.com/diagrams/${diagramId}/classes/${classId}/position`,
+        `http://localhost:5000/diagrams/${diagramId}/classes/${classId}/position`,
         { position },
         config
       );
@@ -275,7 +269,7 @@ export const updateClass =
       };
 
       const res = await axios.put(
-        `https://uml-diagramer-back.onrender.com/diagrams/${diagramId}/classes/${classId}`,
+        `http://localhost:5000/diagrams/${diagramId}/classes/${classId}`,
         classData,
         config
       );
@@ -304,7 +298,7 @@ export const updateLink = (diagramId, linkId, linkData) => async (dispatch) => {
     };
 
     const res = await axios.put(
-      `https://uml-diagramer-back.onrender.com/diagrams/${diagramId}/links/${linkId}`,
+      `http://localhost:5000/diagrams/${diagramId}/links/${linkId}`,
       linkData,
       config
     );
