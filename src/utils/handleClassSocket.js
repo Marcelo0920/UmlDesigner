@@ -14,6 +14,7 @@ export const handleClassPositionChanged =
     if (diagramId === id) {
       isRemoteUpdateRef.current = true;
       setIsRemoteUpdate(true);
+
       const jointjsId = idMappingRef.current[classId];
       if (jointjsId) {
         const cell = graphRef.current.getCell(jointjsId);
@@ -21,16 +22,16 @@ export const handleClassPositionChanged =
           cell.position(newPosition.x, newPosition.y);
         }
       }
+
       setTimeout(() => {
         isRemoteUpdateRef.current = false;
         setIsRemoteUpdate(false);
       }, 0);
     }
   };
-
 export const handleClassAdded =
   (id, graphRef, setIdMapping) =>
-  ({ diagramId, newClass }) => {
+  ({ diagramId, newClass, classes }) => {
     if (diagramId === id && graphRef.current) {
       const umlClass = new UmlClass({
         position: newClass.position,
@@ -39,14 +40,17 @@ export const handleClassAdded =
         attributes: newClass.attributes,
         methods: newClass.methods,
       });
+
       graphRef.current.addCell(umlClass);
-      setIdMapping((prevMapping) => {
-        const updatedMapping = {
-          ...prevMapping,
-          [newClass._id]: umlClass.id,
-        };
-        return updatedMapping;
-      });
+
+      const newClassMongoId = classes.classes[classes.classes.length - 1]._id;
+
+      console.log(umlClass.id);
+
+      setIdMapping((prevMapping) => ({
+        ...prevMapping,
+        [newClassMongoId]: umlClass.id,
+      }));
     }
   };
 

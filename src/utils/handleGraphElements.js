@@ -85,7 +85,9 @@ export const addNewUmlClass = async (
   graphRef,
   addClass,
   projectId,
-  setIdMapping
+  setIdMapping,
+  socketRef,
+  isRemoteUpdateRef
 ) => {
   if (graphRef.current) {
     const newClass = {
@@ -98,21 +100,15 @@ export const addNewUmlClass = async (
 
     try {
       const response = await addClass(projectId, newClass);
-      const addedClass = response.classes[response.data.classes.length - 1];
+      const addedClass = response.classes[response.classes.length - 1];
 
-      const umlClass = new UmlClass({
-        position: addedClass.position,
-        size: addedClass.size,
-        name: [addedClass.name],
-        attributes: addedClass.attributes,
-        methods: addedClass.methods,
-      });
-      graphRef.current.addCell(umlClass);
-
+      /*    // Update the idMapping with the new class
       setIdMapping((prevMapping) => ({
         ...prevMapping,
-        [addedClass._id]: umlClass.id,
-      }));
+        [addedClass._id]: addedClass._id, // Temporary ID that will be updated in handleClassAdded
+      })); */
+
+      return addedClass._id; // Return the MongoDB ID for reference
     } catch (error) {
       console.error("Error adding new class:", error);
     }

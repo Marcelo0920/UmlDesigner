@@ -34,7 +34,7 @@ export const exportUmlDesign = async (graphRef) => {
         "http://localhost:5000/generator",
         filteredData,
         {
-          responseType: "blob", // Important: Set the response type to blob
+          responseType: "blob",
         }
       );
 

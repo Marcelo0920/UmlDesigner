@@ -183,8 +183,8 @@ const UmlDesigner = ({
   );
 
   const handleClassAddedCallback = useCallback(
-    handleClassAdded(id, graphRef, setIdMapping),
-    [id]
+    handleClassAdded(id, graphRef, setIdMapping, socketRef, isRemoteUpdateRef),
+    [id, graphRef, socketRef, isRemoteUpdateRef]
   );
 
   const handleClassDeletedCallback = useCallback(
@@ -198,6 +198,10 @@ const UmlDesigner = ({
   );
 
   const getPartialId = (fullId) => fullId.slice(0, -1);
+
+  useEffect(() => {
+    idMappingRef.current = idMapping;
+  }, [idMapping]);
 
   useEffect(() => {
     if (project && graphRef.current && paperRef.current && !loading) {
@@ -260,19 +264,12 @@ const UmlDesigner = ({
                 break;
 
               case "intermediate":
-                // Find the intermediate class
                 const intermediateClassId = Object.entries(newIdMapping).find(
                   ([key, value]) =>
                     getPartialId(key).startsWith(getPartialId(linkData._id))
                 )?.[1];
 
-                console.log("New ID Mapping:", newIdMapping);
-                console.log("Intermediate Class ID:", intermediateClassId);
-                console.log("Link Data:", linkData);
-
                 if (intermediateClassId) {
-                  // Create the direct link between source and target
-                  console.log("intermediate class");
                   const directLinkId = createLink(
                     sourceId,
                     targetId,
@@ -280,7 +277,6 @@ const UmlDesigner = ({
                     paperRef
                   );
 
-                  // Create the dashed link from the direct link to the intermediate class
                   const dashedLinkId = createDashedLink(
                     directLinkId,
                     intermediateClassId,
@@ -288,14 +284,11 @@ const UmlDesigner = ({
                     paperRef
                   );
 
-                  // Store both link IDs in the mapping
                   newIdMapping[linkData._id] = { directLinkId, dashedLinkId };
 
-                  // Ensure links are added to the graph
                   const directLink = graphRef.current.getCell(directLinkId);
                   const dashedLink = graphRef.current.getCell(dashedLinkId);
-                  console.log(directLink);
-                  console.log(dashedLink);
+
                   if (!graphRef.current.getCell(directLinkId)) {
                     graphRef.current.addCell(directLink);
                   }
@@ -433,8 +426,6 @@ const UmlDesigner = ({
             );
           }
 
-          console.log("Link data before addLink:", linkData);
-
           if (linkData) {
             addLink(id, {
               source: sourceElement.mongoId,
@@ -480,6 +471,7 @@ const UmlDesigner = ({
           const mongoDbId = Object.keys(idMappingRef.current).find(
             (key) => idMappingRef.current[key] === cell.id
           );
+
           if (mongoDbId) {
             const newPosition = cell.position();
 
@@ -660,8 +652,15 @@ const UmlDesigner = ({
   }, [editingLink, paperRef, linkValues, idMapping, updateLink, id]);
 
   const addNewUmlClassCallback = useCallback(() => {
-    addNewUmlClass(graphRef, addClass, id, setIdMapping);
-  }, [graphRef, addClass, id]);
+    addNewUmlClass(
+      graphRef,
+      addClass,
+      id,
+      setIdMapping,
+      socketRef,
+      isRemoteUpdateRef
+    );
+  }, [graphRef, addClass, id, socketRef, isRemoteUpdateRef]);
 
   const deleteSelectedElementCallback = useCallback(() => {
     deleteSelectedElement(
