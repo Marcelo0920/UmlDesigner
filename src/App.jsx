@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route } from "react-router-dom";
 import React, { useEffect } from "react";
 import UmlDesigner from "./components/UmlDesigner.jsx";
 import Home from "./pages/Home.jsx";
@@ -20,14 +20,14 @@ function App() {
   }, []);
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/designer/:id" element={<UmlDesigner />} />
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 

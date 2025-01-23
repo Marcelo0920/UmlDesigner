@@ -7,7 +7,6 @@ import {
   createDependency,
   createDashedLink,
 } from "./linkCreators";
-
 import createIntermediateClass from "./createIntermediateClass";
 
 export const importDiagram = (
@@ -21,240 +20,284 @@ export const importDiagram = (
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(xmlContent, "text/xml");
 
+  console.log(xmlDoc);
+
   // Clear existing diagram
   graphRef.current.clear();
 
-  // Import classes
-  const classes = xmlDoc.getElementsByTagName("UML:Class");
-  const classMap = new Map();
+  // Handle namespaces properly
+  const nsUML = "http://www.eclipse.org/uml2/5.0.0/UML";
 
-  const classPromises = Array.from(classes).map(async (classElement) => {
-    const className = classElement.getAttribute("name");
-    const classId = classElement.getAttribute("xmi.id");
+  // Find all packagedElements that are of type uml:Class
+  const classes = xmlDoc.getElementsByTagNameNS(nsUML, "Class");
+  if (!classes.length) {
+    // Fallback to looking for packagedElement with xmi:type="uml:Class"
+    const packagedElements = xmlDoc.getElementsByTagName("packagedElement");
+    const classElements = Array.from(packagedElements).filter(
+      (element) => element.getAttribute("xmi:type") === "uml:Class"
+    );
+    console.log("Found classes using fallback method:", classElements.length);
+    processClasses(classElements);
+  } else {
+    console.log("Found classes using namespace:", classes.length);
+    processClasses(classes);
+  }
 
-    // Skip EARootClass
-    if (className === "EARootClass") {
-      return null;
-    }
+  function processClasses(classElements) {
+    const classMap = new Map();
+    const classPromises = Array.from(classElements).map(
+      async (classElement) => {
+        const className = classElement.getAttribute("name");
+        const classId =
+          classElement.getAttribute("xmi:id") ||
+          classElement.getAttribute("xmi.id");
 
-    const attributes = Array.from(
-      classElement.getElementsByTagName("UML:Attribute")
-    ).map(
-      (attr) => `${attr.getAttribute("name")}: ${attr.getAttribute("type")}`
+        // Skip EARootClass
+        if (className === "EARootClass") {
+          return null;
+        }
+
+        // Get attributes
+        const attributes = Array.from(
+          classElement.getElementsByTagName("ownedAttribute")
+        ).map((attr) => {
+          const name = attr.getAttribute("name");
+          const type = attr.getAttribute("type");
+          return `${name}: ${type}`;
+        });
+
+        // Get methods
+        const operations = Array.from(
+          classElement.getElementsByTagName("ownedOperation")
+        ).map((operation) => {
+          const name = operation.getAttribute("name");
+          const returnParam = operation.querySelector(
+            "ownedParameter[direction='return']"
+          );
+          const returnType = returnParam
+            ? returnParam
+                .querySelector("type")
+                ?.getAttribute("href")
+                ?.split("#")
+                .pop() || "void"
+            : "void";
+          return `${name}: ${returnType}`;
+        });
+
+        const position = { x: Math.random() * 500, y: Math.random() * 500 };
+        const size = { width: 200, height: 100 };
+
+        const classData = {
+          name: className,
+          attributes,
+          methods: operations,
+          position,
+          size,
+        };
+
+        try {
+          const response = await addClass(id, classData);
+          const newClassId = response.classes[response.classes.length - 1]._id;
+
+          console.log(response);
+
+          const umlClass = new UmlClass({
+            position,
+            size,
+            name: className,
+            attributes,
+            methods: operations,
+          });
+
+          return { xmlId: classId, graphId: umlClass.id, dbId: newClassId };
+        } catch (error) {
+          console.error("Error adding class:", error);
+        }
+      }
     );
 
-    const methods = Array.from(
-      classElement.getElementsByTagName("UML:Operation")
-    ).map((method) => {
-      const returnType = method.getAttribute("returnType") || "void";
-      return `${method.getAttribute("name")}: ${returnType}`;
-    });
+    // Process relationships after classes are added
+    Promise.all(classPromises).then(() => processRelationships(classMap));
+  }
 
-    const position = { x: Math.random() * 500, y: Math.random() * 500 };
-    const size = { width: 200, height: 100 };
-
-    const classData = {
-      name: className,
-      attributes,
-      methods,
-      position,
-      size,
-    };
-
-    try {
-      const response = await addClass(id, classData);
-      const newClassId = response.classes[response.classes.length - 1]._id;
-
-      const umlClass = new UmlClass({
-        position,
-        size,
-        name: className,
-        attributes,
-        methods,
-      });
-
-      graphRef.current.addCell(umlClass);
-      classMap.set(classId, { graphId: umlClass.id, dbId: newClassId });
-
-      return { xmlId: classId, graphId: umlClass.id, dbId: newClassId };
-    } catch (error) {
-      console.error("Error adding class:", error);
-    }
-  });
-
-  Promise.all(classPromises).then(() => {
-    // Import associations and other relationship types
+  function processRelationships(classMap) {
+    // Process all types of relationships
     const relationships = [
-      ...xmlDoc.getElementsByTagName("UML:Association"),
-      ...xmlDoc.getElementsByTagName("UML:Generalization"),
-      ...xmlDoc.getElementsByTagName("UML:Dependency"),
-      ...xmlDoc.getElementsByTagName("UML:Composition"),
-      ...xmlDoc.getElementsByTagName("UML:Aggregation"),
-      ...xmlDoc.getElementsByTagName("UML:AssociationClass"),
+      ...Array.from(xmlDoc.getElementsByTagName("packagedElement")).filter(
+        (element) => {
+          const type = element.getAttribute("xmi:type");
+          return [
+            "uml:Association",
+            "uml:Dependency",
+            "uml:Generalization",
+            "uml:AssociationClass",
+          ].includes(type);
+        }
+      ),
     ];
 
+    console.log(relationships);
+
     relationships.forEach((relationshipElement) => {
-      let sourceId, targetId, linkType, intermediateClassId;
+      const type = relationshipElement.getAttribute("xmi:type");
+      let sourceId, targetId, linkType, sourceMultiplicity, targetMultiplicity;
 
-      console.log(relationshipElement);
+      switch (type) {
+        case "uml:Association":
+          const memberEnds =
+            relationshipElement.getElementsByTagName("memberEnd");
+          if (memberEnds.length >= 2) {
+            // Get the actual ownedEnd elements instead of just memberEnd references
+            const ownedEnds =
+              relationshipElement.getElementsByTagName("ownedEnd");
+            const source = ownedEnds[0];
+            const target = ownedEnds[1];
 
-      switch (relationshipElement.tagName) {
-        case "UML:Association":
-          const sourceEnd =
-            relationshipElement.getElementsByTagName("UML:AssociationEnd")[0];
-          const targetEnd =
-            relationshipElement.getElementsByTagName("UML:AssociationEnd")[1];
+            sourceId = source.getAttribute("type");
+            targetId = target.getAttribute("type");
 
-          if (sourceEnd && targetEnd) {
-            sourceId = sourceEnd.getAttribute("type");
-            targetId = targetEnd.getAttribute("type");
+            // Get multiplicities
+            sourceMultiplicity = getMultiplicity(source);
+            targetMultiplicity = getMultiplicity(target);
 
-            if (
-              relationshipElement.getAttribute("name") == "IntermediateClass"
-            ) {
-              linkType = "intermediate";
-            }
-            linkType = "association";
-
-            const sourceAggregation = sourceEnd.getAttribute("aggregation");
-            const targetAggregation = targetEnd.getAttribute("aggregation");
-
-            if (
-              sourceAggregation === "composite" ||
-              targetAggregation === "composite"
-            ) {
+            const aggregation = source.getAttribute("aggregation");
+            if (aggregation === "composite") {
               linkType = "composition";
-              // Swap source and target for composition
-              [sourceId, targetId] = [targetId, sourceId];
-            } else if (
-              sourceAggregation === "shared" ||
-              targetAggregation === "shared"
-            ) {
+            } else if (aggregation === "shared") {
               linkType = "aggregation";
-              // Swap source and target for aggregation
-              [sourceId, targetId] = [targetId, sourceId];
+            } else {
+              linkType = "association";
             }
           }
           break;
 
-        case "UML:Generalization":
-          sourceId = relationshipElement.getAttribute("subtype");
-          targetId = relationshipElement.getAttribute("supertype");
+        case "uml:AssociationClass":
+          const assocMemberEnds =
+            relationshipElement.getElementsByTagName("memberEnd");
+          if (assocMemberEnds.length >= 2) {
+            const ownedEnds =
+              relationshipElement.getElementsByTagName("ownedEnd");
+            sourceId = ownedEnds[0].getAttribute("type");
+            targetId = ownedEnds[1].getAttribute("type");
+            sourceMultiplicity = getMultiplicity(ownedEnds[0]);
+            targetMultiplicity = getMultiplicity(ownedEnds[1]);
+            linkType = "associationclass";
+          }
+          break;
+
+        case "uml:Dependency":
+          const client = relationshipElement.querySelector("client");
+          const supplier = relationshipElement.querySelector("supplier");
+          if (client && supplier) {
+            sourceId = client.getAttribute("xmi:idref");
+            targetId = supplier.getAttribute("xmi:idref");
+            linkType = "dependency";
+          }
+          break;
+
+        case "uml:Generalization":
+          sourceId = relationshipElement.parentNode.getAttribute("xmi:id");
+          targetId = relationshipElement.getAttribute("general");
           linkType = "generalization";
-          break;
-
-        case "UML:Dependency":
-          sourceId = relationshipElement.getAttribute("client");
-          targetId = relationshipElement.getAttribute("supplier");
-          linkType = "dependency";
-          break;
-
-        case "UML:Composition":
-          // Swap source and target for composition
-          targetId = relationshipElement.getAttribute("whole");
-          sourceId = relationshipElement.getAttribute("part");
-          linkType = "composition";
-          break;
-
-        case "UML:Aggregation":
-          // Swap source and target for aggregation
-          targetId = relationshipElement.getAttribute("whole");
-          sourceId = relationshipElement.getAttribute("part");
-          linkType = "aggregation";
-          break;
-
-        case "UML:AssociationClass":
-          const associationEnds =
-            relationshipElement.getElementsByTagName("UML:AssociationEnd");
-          sourceId = associationEnds[0]?.getAttribute("type");
-          targetId = associationEnds[1]?.getAttribute("type");
-          intermediateClassId = relationshipElement.getAttribute("xmi.id");
-          linkType = "associationClass";
           break;
       }
 
-      if (sourceId && targetId) {
+      if (
+        sourceId &&
+        targetId &&
+        classMap.has(sourceId) &&
+        classMap.has(targetId)
+      ) {
         const sourceIds = classMap.get(sourceId);
         const targetIds = classMap.get(targetId);
+        let linkId;
 
-        if (sourceIds && targetIds) {
-          let linkId;
-
-          console.log(linkType);
-          if (linkType === "intermediate") {
-            linkId = createDashedLink(
+        // Create the appropriate link based on type
+        switch (linkType) {
+          case "composition":
+            linkId = createComposition(
               sourceIds.graphId,
               targetIds.graphId,
               graphRef,
               paperRef
             );
-          }
-          if (linkType === "associationClass") {
-            const intermediateClassInfo = createIntermediateClass(
+            break;
+          case "aggregation":
+            linkId = createAggregation(
               sourceIds.graphId,
               targetIds.graphId,
               graphRef,
-              paperRef,
-              idMappingRef,
-              id
+              paperRef
             );
+            break;
+          case "generalization":
+            linkId = createGeneralization(
+              sourceIds.graphId,
+              targetIds.graphId,
+              graphRef,
+              paperRef
+            );
+            break;
+          case "dependency":
+            linkId = createDependency(
+              sourceIds.graphId,
+              targetIds.graphId,
+              graphRef,
+              paperRef
+            );
+            break;
+          case "associationclass":
+            // Handle association class specifically
+            linkId = createLink(
+              sourceIds.graphId,
+              targetIds.graphId,
+              graphRef,
+              paperRef
+            );
+            // Create intermediate class and dashed link here
+            break;
+          default:
+            linkId = createLink(
+              sourceIds.graphId,
+              targetIds.graphId,
+              graphRef,
+              paperRef
+            );
+        }
 
-            if (intermediateClassInfo) {
-              addLink(id, intermediateClassInfo);
-            }
-          } else {
-            switch (linkType) {
-              case "composition":
-                linkId = createComposition(
-                  sourceIds.graphId,
-                  targetIds.graphId,
-                  graphRef,
-                  paperRef
-                );
-                break;
-              case "aggregation":
-                linkId = createAggregation(
-                  sourceIds.graphId,
-                  targetIds.graphId,
-                  graphRef,
-                  paperRef
-                );
-                break;
-              case "generalization":
-                linkId = createGeneralization(
-                  sourceIds.graphId,
-                  targetIds.graphId,
-                  graphRef,
-                  paperRef
-                );
-                break;
-              case "dependency":
-                linkId = createDependency(
-                  sourceIds.graphId,
-                  targetIds.graphId,
-                  graphRef,
-                  paperRef
-                );
-                break;
-              default:
-                linkId = createLink(
-                  sourceIds.graphId,
-                  targetIds.graphId,
-                  graphRef,
-                  paperRef
-                );
-            }
-
-            if (linkId) {
-              addLink(id, {
-                source: sourceIds.dbId,
-                target: targetIds.dbId,
-                linkType: linkType,
-              });
-            }
+        // Update link multiplicities if they exist
+        if (linkId && sourceMultiplicity && targetMultiplicity) {
+          const link = graphRef.current.getCell(linkId);
+          if (link) {
+            link.label(1, { attrs: { text: { text: sourceMultiplicity } } });
+            link.label(2, { attrs: { text: { text: targetMultiplicity } } });
           }
+        }
+
+        // Add to database
+        if (linkId) {
+          addLink(id, {
+            source: sourceIds.dbId,
+            target: targetIds.dbId,
+            linkType: linkType,
+            sourceMultiplicity,
+            targetMultiplicity,
+          });
         }
       }
     });
-  });
+  }
+
+  function getMultiplicity(ownedEnd) {
+    const lower = ownedEnd.querySelector("lowerValue");
+    const upper = ownedEnd.querySelector("upperValue");
+
+    let lowerValue = lower ? lower.getAttribute("value") : "1";
+    let upperValue = upper ? upper.getAttribute("value") : "1";
+
+    // Convert -1 back to *
+    upperValue = upperValue === "-1" ? "*" : upperValue;
+
+    return `${lowerValue}..${upperValue}`;
+  }
 };

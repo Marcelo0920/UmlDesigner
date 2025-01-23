@@ -1,4 +1,5 @@
 import React from "react";
+import "../../styles/project.css";
 
 const ProjectItem = ({ nombre }) => {
   return (

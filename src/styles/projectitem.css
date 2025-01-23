@@ -20,5 +20,5 @@
   color: var(--secondary-color);
   margin: 0;
   word-break: break-word;
-  max-width: 100%;
+  width: 40%;
 }

@@ -5,8 +5,8 @@
 .project-item {
   border: 1px dashed white;
   cursor: pointer;
-  width: 100px;
-  height: 100px;
+  width: 80px;
+  height: 80px;
   margin: 10px;
   text-align: center;
 }
